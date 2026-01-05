@@ -53,30 +53,33 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans">
+    <div className="flex flex-col h-screen text-gray-100 font-sans selection:bg-blue-500/30">
       
-      {/* 1. Top Status Strip */}
+      {/* 1. Top Status Strip (Fixed Height) */}
       <StatusStrip 
         status={status} 
         connectionState={connectionState} 
         currentScene={currentScene} 
       />
 
-      {/* 2. Main Content Grid */}
-      <div className="flex-1 p-4 overflow-hidden">
-        <div className="grid grid-cols-12 gap-4 h-full">
+      {/* 2. Main Content Grid (Fluid) */}
+      <div className="flex-1 p-6 overflow-hidden">
+        <div className="grid grid-cols-12 gap-6 h-full max-w-[1920px] mx-auto">
           
-          {/* Left Column: Connection & Critical Controls (3 cols) */}
-          <div className="col-span-12 md:col-span-3 flex flex-col gap-4 overflow-y-auto">
+          {/* Left Column: Command Center (3 cols) */}
+          <div className="col-span-12 xl:col-span-3 lg:col-span-3 flex flex-col gap-6 overflow-hidden">
             <ConnectionPanel connectionState={connectionState} />
-            <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
-            <div className="mt-auto">
-                <Logger logs={logs} />
+            
+            <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1 custom-scroll">
+                 <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
+                 <div className="mt-auto">
+                    <Logger logs={logs} />
+                 </div>
             </div>
           </div>
 
-          {/* Center Column: Scenes (5 cols) */}
-          <div className="col-span-12 md:col-span-5 flex flex-col gap-4 h-full">
+          {/* Center Column: Visual Switching (5 cols) */}
+          <div className="col-span-12 xl:col-span-5 lg:col-span-5 flex flex-col h-full overflow-hidden">
             <SceneGrid 
                 scenes={scenes} 
                 currentScene={currentScene} 
@@ -84,15 +87,15 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* Right Column: Audio & PTZ (4 cols) */}
-          <div className="col-span-12 md:col-span-4 flex flex-col gap-4 h-full overflow-y-auto">
-            <div className="flex-1 min-h-[300px]">
+          {/* Right Column: Mix & Move (4 cols) */}
+          <div className="col-span-12 xl:col-span-4 lg:col-span-4 flex flex-col gap-6 h-full overflow-hidden">
+            <div className="flex-1 min-h-[40%] overflow-hidden">
                 <AudioMixer 
                     sources={audioSources} 
                     isConnected={connectionState === ConnectionState.CONNECTED}
                 />
             </div>
-            <div className="min-h-[200px]">
+            <div className="h-[40%] min-h-[250px]">
                 <PTZPanel isConnected={connectionState === ConnectionState.CONNECTED} />
             </div>
           </div>

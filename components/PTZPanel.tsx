@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { obsService } from '../services/obsService';
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Aperture, Target, Save } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Target, Save, Crosshair, Focus } from 'lucide-react';
 
 interface Props {
   isConnected: boolean;
@@ -8,9 +8,7 @@ interface Props {
 
 export const PTZPanel: React.FC<Props> = ({ isConnected }) => {
   const [newPresetName, setNewPresetName] = useState('');
-  const btnClass = "bg-gray-700 hover:bg-gray-600 active:bg-blue-600 text-white rounded p-3 flex items-center justify-center transition-colors shadow-md disabled:opacity-30 disabled:cursor-not-allowed";
   
-  // Commands for obs-ptz
   const move = (x: number, y: number) => obsService.ptzAction('relative-pt', { x, y });
   const zoom = (z: number) => obsService.ptzAction('relative-zoom', { z });
   
@@ -22,76 +20,87 @@ export const PTZPanel: React.FC<Props> = ({ isConnected }) => {
       setNewPresetName('');
   };
 
+  const padBtn = "bg-gray-800 hover:bg-gray-700 active:bg-brand-600 text-gray-300 rounded shadow-sm border-b-2 border-black active:border-b-0 active:translate-y-[2px] transition-all disabled:opacity-50";
+
   return (
-    <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 flex flex-col gap-4">
-      <h3 className="text-gray-300 font-semibold flex items-center gap-2">
-        <Target className="w-4 h-4" /> Controle PTZ
+    <div className="glass-panel rounded-xl p-4 border border-gray-700 flex flex-col gap-4 h-full shadow-xl bg-[#13161b]">
+      <h3 className="text-gray-400 font-bold text-xs uppercase tracking-widest flex items-center gap-2 border-b border-gray-800 pb-2">
+        <Target className="w-3 h-3 text-brand-500" /> Camera Control
       </h3>
 
-      <div className="flex gap-4">
-        {/* D-Pad */}
-        <div className="bg-gray-900/50 p-3 rounded-lg flex flex-col items-center gap-2 border border-gray-700/50">
-            <button className={btnClass} disabled={!isConnected} onClick={() => move(0, -0.1)}><ChevronUp className="w-6 h-6" /></button>
-            <div className="flex gap-2">
-                <button className={btnClass} disabled={!isConnected} onClick={() => move(-0.1, 0)}><ChevronLeft className="w-6 h-6" /></button>
-                <button className={btnClass} disabled={!isConnected} onClick={() => move(0, 0.1)}><ChevronDown className="w-6 h-6" /></button>
-                <button className={btnClass} disabled={!isConnected} onClick={() => move(0.1, 0)}><ChevronRight className="w-6 h-6" /></button>
-            </div>
+      <div className="flex gap-4 items-start">
+        {/* Joystick Simulation */}
+        <div className="relative w-28 h-28 bg-[#0a0c10] rounded-full border-4 border-gray-800 shadow-[inset_0_4px_10px_rgba(0,0,0,1)] flex items-center justify-center shrink-0">
+             
+             {/* Crosshair/Stick */}
+             <div className="w-12 h-12 bg-gray-700 rounded-full shadow-[0_4px_5px_rgba(0,0,0,0.5)] border-t border-gray-600 flex items-center justify-center relative z-10">
+                 <div className="w-4 h-4 rounded-full bg-black/50 inset-shadow"></div>
+             </div>
+
+             {/* Hidden Hit Areas for Click */}
+             <button className="absolute top-0 w-full h-1/2 z-0 cursor-n-resize opacity-0 hover:opacity-10 bg-white/10" disabled={!isConnected} onClick={() => move(0, -0.1)} />
+             <button className="absolute bottom-0 w-full h-1/2 z-0 cursor-s-resize opacity-0 hover:opacity-10 bg-white/10" disabled={!isConnected} onClick={() => move(0, 0.1)} />
+             <button className="absolute left-0 h-full w-1/2 z-0 cursor-w-resize opacity-0 hover:opacity-10 bg-white/10" disabled={!isConnected} onClick={() => move(-0.1, 0)} />
+             <button className="absolute right-0 h-full w-1/2 z-0 cursor-e-resize opacity-0 hover:opacity-10 bg-white/10" disabled={!isConnected} onClick={() => move(0.1, 0)} />
+             
+             {/* Visual Arrows */}
+             <ChevronUp className="absolute top-2 text-gray-600 pointer-events-none w-4 h-4" />
+             <ChevronDown className="absolute bottom-2 text-gray-600 pointer-events-none w-4 h-4" />
+             <ChevronLeft className="absolute left-2 text-gray-600 pointer-events-none w-4 h-4" />
+             <ChevronRight className="absolute right-2 text-gray-600 pointer-events-none w-4 h-4" />
         </div>
 
-        {/* Zoom & Focus */}
-        <div className="flex flex-col gap-2 flex-1">
-            <div className="grid grid-cols-2 gap-2">
-                <button className={`${btnClass} text-xs font-bold gap-1`} disabled={!isConnected} onClick={() => zoom(0.1)}>
-                    <ZoomIn className="w-4 h-4" /> Zoom +
+        {/* Zoom Rocker */}
+        <div className="flex flex-col gap-2 flex-1 h-28">
+            <div className="flex-1 bg-gray-900 rounded border border-gray-700 p-1 flex flex-col gap-1">
+                <button 
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 rounded text-xs font-bold text-gray-400 hover:text-white transition-colors active:bg-brand-600 shadow-sm"
+                    disabled={!isConnected} onClick={() => zoom(0.1)}
+                >
+                    TELE
                 </button>
-                <button className={`${btnClass} text-xs font-bold gap-1`} disabled={!isConnected} onClick={() => zoom(-0.1)}>
-                    <ZoomOut className="w-4 h-4" /> Zoom -
-                </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-auto">
-                <button className={`${btnClass} text-xs bg-gray-800 border border-gray-600`} disabled={!isConnected} onClick={() => obsService.ptzAction('auto-focus')}>
-                    Focus Auto
-                </button>
-                <button className={`${btnClass} text-xs bg-gray-800 border border-gray-600`} disabled={!isConnected} onClick={() => obsService.ptzAction('manual-focus')}>
-                    Focus Man
+                <button 
+                    className="flex-1 bg-gray-800 hover:bg-gray-700 rounded text-xs font-bold text-gray-400 hover:text-white transition-colors active:bg-brand-600 shadow-sm"
+                    disabled={!isConnected} onClick={() => zoom(-0.1)}
+                >
+                    WIDE
                 </button>
             </div>
         </div>
       </div>
 
-      {/* Presets */}
-      <div>
-        <label className="text-xs text-gray-500 mb-2 block uppercase tracking-wider">Presets Rápidos</label>
-        <div className="grid grid-cols-3 gap-2 mb-4">
+      {/* Preset Bank - Number Pad Style */}
+      <div className="mt-auto bg-[#0a0c10] p-3 rounded border border-gray-800 shadow-inner">
+        <label className="text-[9px] text-gray-600 mb-2 block uppercase tracking-wider font-bold">Memory Bank</label>
+        <div className="grid grid-cols-3 gap-2">
             {presets.map(id => (
                 <button 
                     key={id}
                     disabled={!isConnected}
                     onClick={() => obsService.recallPtzPreset(`Preset ${id}`)}
-                    className="bg-gray-900 border border-gray-700 hover:border-blue-500 text-gray-400 hover:text-blue-400 py-2 rounded text-sm font-mono transition-all"
+                    className={`${padBtn} h-8 text-sm font-mono font-bold`}
                 >
-                    P-{id}
+                    {id}
                 </button>
             ))}
         </div>
         
-        {/* Save Preset */}
-        <div className="flex gap-2">
+        {/* Save Controls */}
+        <div className="flex gap-2 mt-3 pt-2 border-t border-gray-800">
             <input 
                 type="text" 
-                placeholder="Nome do Preset"
+                placeholder="Name..."
                 value={newPresetName}
                 onChange={e => setNewPresetName(e.target.value)}
-                className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm flex-1"
+                className="bg-gray-900 text-gray-300 text-[10px] px-2 py-1 flex-1 rounded border border-gray-700 focus:border-brand-500 outline-none"
                 disabled={!isConnected}
             />
             <button 
                 onClick={handleSavePreset}
                 disabled={!isConnected || !newPresetName}
-                className="bg-blue-600 text-white p-2 rounded hover:bg-blue-500 disabled:opacity-50"
+                className="bg-red-900/50 text-red-400 px-2 rounded hover:bg-red-800 hover:text-white transition-colors text-[10px] uppercase font-bold border border-red-900"
             >
-                <Save className="w-4 h-4" />
+                Store
             </button>
         </div>
       </div>
