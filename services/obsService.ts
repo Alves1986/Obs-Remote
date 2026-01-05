@@ -27,6 +27,7 @@ class ObsService {
   private currentScene: string = '';
   private previewScene: string = ''; // New: Track Preview
   private audioSources: AudioSource[] = [];
+  private inputs: string[] = []; // List of all inputs for PTZ selection
   private transitionState: TransitionState = { currentTransition: 'Fade', duration: 300, availableTransitions: [] };
   private studioMode: boolean = false;
   
@@ -108,18 +109,23 @@ class ObsService {
 
   // --- Connection Logic ---
 
-  async connect(host: string, port: string, password?: string): Promise<void> {
+  async connect(host: string, port: string, password?: string, secure: boolean = false): Promise<void> {
     if (this.state === ConnectionState.CONNECTED) return;
 
     this.state = ConnectionState.CONNECTING;
     this.emit('connectionState', this.state);
 
+    // Remove protocol prefixes if user typed them manually
     let cleanHost = host.replace('ws://', '').replace('wss://', '').replace('/', '');
+    
+    // Ensure Port logic
     if (!cleanHost.includes(':')) {
         cleanHost = `${cleanHost}:${port}`;
     }
 
-    const url = `ws://${cleanHost}`;
+    // Determine protocol based on secure flag
+    const protocol = secure ? 'wss' : 'ws';
+    const url = `${protocol}://${cleanHost}`;
 
     try {
       console.log(`Tentando conectar em: ${url}`);
@@ -127,7 +133,7 @@ class ObsService {
       
       this.state = ConnectionState.CONNECTED;
       this.emit('connectionState', this.state);
-      this.log('Conectado ao OBS com sucesso!', 'success');
+      this.log(`Conectado com sucesso (${protocol.toUpperCase()})!`, 'success');
       
       await this.initializeData();
       this.startHeartbeat();
@@ -214,6 +220,7 @@ class ObsService {
     await this.refreshStatus();
     await this.refreshAudioSources();
     await this.refreshTransition();
+    await this.refreshInputs();
     
     // Check Studio Mode
     try {
@@ -291,6 +298,14 @@ class ObsService {
       this.audioSources = sources;
       this.emit('audioSources', this.audioSources);
     } catch (e) {}
+  }
+
+  private async refreshInputs() {
+      try {
+          const list = await this.obs.call('GetInputList');
+          this.inputs = list.inputs.map((i: any) => i.inputName);
+          this.emit('inputs', this.inputs);
+      } catch (e) {}
   }
 
   private async refreshTransition() {
@@ -457,41 +472,50 @@ class ObsService {
     } catch (e) {}
   }
 
-  async applyAudioPreset(type: 'worship' | 'sermon' | 'service') {
-      const presets: Record<string, { [key: string]: { vol?: number, muted?: boolean } }> = {
-          worship: { [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.9, muted: false }, 'Mic Pregador': { muted: true } },
-          sermon: { [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.5, muted: false }, 'Mic Pregador': { vol: 1.0, muted: false } },
-          service: { [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.8, muted: false } }
-      };
-      const preset = presets[type];
-      if (!preset) return;
-      for (const [name, settings] of Object.entries(preset)) {
-          if (settings.vol !== undefined) await this.setAudioVolume(name, settings.vol);
-          if (settings.muted !== undefined) await this.setAudioMute(name, settings.muted);
-      }
-  }
+  // --- PTZ Logic (Updated) ---
 
-  // --- PTZ Logic ---
-
-  async ptzAction(command: string, args: any = {}) {
+  async ptzAction(sourceName: string, action: string, arg: string | number) {
       if (this.state !== ConnectionState.CONNECTED) return;
+      
+      // If no source is provided, try to find a generic one or fail gracefully
+      if (!sourceName) {
+          console.warn("PTZ Action blocked: No source selected");
+          return;
+      }
+
       try {
+          // Attempt standard "obs-ptz" vendor request
+          // This supports 'Move', 'Zoom', 'Preset'
+          // Action mapping: 'move', 'zoom', 'preset'
+          // We map our simplified internal actions to the vendor format
+          
+          let requestType = 'ptz';
+          let requestData: any = { id: sourceName };
+
+          if (['left', 'right', 'up', 'down', 'stop'].includes(action)) {
+             requestData.type = 'move';
+             requestData.direction = action;
+          } else if (action === 'zoom') {
+             requestData.type = 'zoom';
+             requestData.direction = Number(arg) > 0 ? 'in' : 'out';
+          } else if (action === 'preset') {
+             requestData.type = 'preset';
+             requestData.num = arg;
+          } else if (action === 'save-preset') {
+              // Plugin dependent, generic implementation might not support save via WS
+              this.log('Save preset via WS not fully supported by all plugins', 'warning');
+              return;
+          }
+
+          console.log("Sending PTZ:", requestData);
           await this.obs.call('CallVendorRequest', {
               vendorName: 'obs-ptz',
-              requestType: command,
-              requestData: args
+              requestType: requestType,
+              requestData: requestData
           });
       } catch (e: any) {
-          // Silent fail or log
+          console.error("PTZ Plugin Error:", e);
       }
-  }
-
-  async savePtzPreset(name: string) {
-      await this.ptzAction('save-preset', { name });
-  }
-
-  async recallPtzPreset(name: string) {
-      await this.ptzAction('recall-preset', { name });
   }
 
   // --- Internals ---
@@ -541,6 +565,7 @@ class ObsService {
         if(event === 'currentScene') callback(this.currentScene);
         if(event === 'previewScene') callback(this.previewScene);
         if(event === 'audioSources') callback(this.audioSources);
+        if(event === 'inputs') callback(this.inputs);
         if(event === 'transition') callback(this.transitionState);
         if(event === 'studioMode') callback(this.studioMode);
     }

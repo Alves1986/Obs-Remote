@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
 import { supabase } from '../services/supabaseClient';
-import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History, Cloud, QrCode, AlertTriangle } from 'lucide-react';
+import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History, Cloud, QrCode, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 
 interface Props {
@@ -13,12 +13,17 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('4455');
   const [password, setPassword] = useState('');
+  const [useSsl, setUseSsl] = useState(false); // Secure Websocket Toggle
+  
   const [presetName, setPresetName] = useState('');
   const [isExpanded, setIsExpanded] = useState(true);
   const [presets, setPresets] = useState<ConnectionPreset[]>([]);
   const [showPresets, setShowPresets] = useState(false);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+
+  // Check if page is served via HTTPS
+  const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
   // Load Presets & Realtime Subscription
   useEffect(() => {
@@ -57,9 +62,9 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         cleanHost = parts[0];
         setHost(cleanHost);
         setPort(parts[1]);
-        obsService.connect(cleanHost, parts[1], password);
+        obsService.connect(cleanHost, parts[1], password, useSsl);
     } else {
-        obsService.connect(cleanHost, port, password);
+        obsService.connect(cleanHost, port, password, useSsl);
     }
   };
 
@@ -92,23 +97,25 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
     let parsedHost = '';
     let parsedPort = '4455';
     let parsedPass = '';
+    let parsedSsl = false;
     let success = false;
+
+    // Detect SSL from QR
+    if (data.includes('wss://')) parsedSsl = true;
 
     try {
         // 1. Try standard JSON (obs-websocket-v5 format)
         if (data.trim().startsWith('{')) {
             const json = JSON.parse(data);
-            // Support various naming conventions found in different generators
             parsedHost = json.host || json.address || json.ip || '';
             parsedPort = String(json.port || '4455');
             parsedPass = json.password || json.pass || '';
-            
             if (parsedHost) success = true;
         } 
         
         // 2. Try URL format (obs:// or ws://)
         if (!success && (data.includes('://') || data.includes('@'))) {
-            // Remove protocol
+            // Remove protocol to get host parts
             let clean = data.replace('obs://', '').replace('ws://', '').replace('wss://', '');
             
             // Format: password@host:port
@@ -133,7 +140,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         // 3. Try Raw format (IP:PORT or just IP)
         if (!success) {
             const clean = data.trim();
-            // Regex for IP address (basic)
             if (clean.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/)) {
                 if (clean.includes(':')) {
                     const parts = clean.split(':');
@@ -147,18 +153,11 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         }
 
         if (success) {
-            // Remove "localhost" if scanned on mobile, force user to verify
-            if (parsedHost.includes('localhost') || parsedHost.includes('127.0.0.1')) {
-                alert("Atenção: QR Code contém 'localhost'. No celular, você precisa do IP da rede (ex: 192.168...).");
-            }
-            
             setHost(parsedHost);
             setPort(parsedPort);
             setPassword(parsedPass);
+            setUseSsl(parsedSsl);
             setShowScanner(false);
-            
-            // Auto connect attempt
-            // setTimeout(() => obsService.connect(parsedHost, parsedPort, parsedPass), 500);
         } else {
             alert(`Formato inválido: ${data.substring(0, 20)}...`);
         }
@@ -185,6 +184,9 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
           </div>
       )
   }
+
+  // Determine if we need to show the HTTPS warning
+  const showHttpsWarning = isPageHttps && !useSsl && !host.includes('localhost') && !host.includes('127.0.0.1');
 
   return (
     <>
@@ -214,7 +216,22 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         {connectionState === ConnectionState.DISCONNECTED || connectionState === ConnectionState.ERROR ? (
           <div className="space-y-4">
             
-            {/* Mobile IP Warning */}
+            {/* HTTPS Warning (Mixed Content) */}
+            {showHttpsWarning && (
+                <div className="bg-red-950/40 border border-red-800/60 p-3 rounded-lg flex gap-3 items-start animate-pulse">
+                    <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                    <div className="text-xs text-red-200">
+                        <strong className="block text-red-400 mb-1">Atenção: Bloqueio de Navegador</strong>
+                        Você está acessando este painel via <b>HTTPS</b>, mas tentando conectar em um IP local inseguro (WS).
+                        <br/><br/>
+                        O navegador <b>vai bloquear</b> essa conexão.
+                        <br/><br/>
+                        <u>Solução:</u> Use um túnel seguro (ngrok) e marque "Usar conexão segura" abaixo, ou acesse o painel via HTTP.
+                    </div>
+                </div>
+            )}
+
+            {/* Mobile IP Warning (Generic) */}
             <div className="md:hidden bg-blue-900/20 border border-blue-800/50 p-2 rounded flex gap-2 items-start">
                 <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                 <p className="text-[10px] text-blue-200 leading-tight">
@@ -303,6 +320,21 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
               </div>
             </div>
 
+            {/* SSL Toggle */}
+            <div className="flex items-center gap-2 py-1 px-1">
+                <input 
+                    type="checkbox" 
+                    id="ssl_toggle"
+                    checked={useSsl}
+                    onChange={(e) => setUseSsl(e.target.checked)}
+                    className="w-4 h-4 accent-brand-500 rounded cursor-pointer"
+                />
+                <label htmlFor="ssl_toggle" className="text-xs text-gray-400 cursor-pointer select-none flex items-center gap-1.5">
+                    <ShieldCheck className={`w-3.5 h-3.5 ${useSsl ? 'text-green-500' : 'text-gray-600'}`} />
+                    Usar conexão segura (SSL/WSS)
+                </label>
+            </div>
+
             {/* Quick Save */}
             <div className="flex gap-2">
                 <input 
@@ -330,6 +362,7 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                     Falha na conexão. <br/>
                     1. Verifique se o OBS e Websocket 5.x estão ativos.<br/>
                     2. Se estiver no celular, verifique se o IP está correto (não use localhost).
+                    3. Se estiver usando HTTPS, use WSS ou um túnel.
                 </div>
             )}
           </div>
@@ -346,7 +379,7 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                   </div>
                   <div>
                       <div className="text-xs text-green-400 font-bold uppercase">Sistema Online</div>
-                      <div className="text-[10px] text-gray-500 font-mono">ws://{host}:{port}</div>
+                      <div className="text-[10px] text-gray-500 font-mono">{useSsl ? 'wss' : 'ws'}://{host}:{port}</div>
                   </div>
               </div>
               
