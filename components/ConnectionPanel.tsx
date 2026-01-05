@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { ConnectionState } from '../types';
+import React, { useState, useEffect } from 'react';
+import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
-import { Plug, Loader2, Check, X, Server, Lock } from 'lucide-react';
+import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History } from 'lucide-react';
 
 interface Props {
   connectionState: ConnectionState;
@@ -11,10 +11,38 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   const [host, setHost] = useState('localhost');
   const [port, setPort] = useState('4455');
   const [password, setPassword] = useState('');
+  const [presetName, setPresetName] = useState('');
   const [isExpanded, setIsExpanded] = useState(true);
+  const [presets, setPresets] = useState<ConnectionPreset[]>([]);
+  const [showPresets, setShowPresets] = useState(false);
+
+  useEffect(() => {
+    setPresets(obsService.getPresets());
+  }, []);
 
   const handleConnect = () => {
     obsService.connect(host, port, password);
+  };
+
+  const handleSavePreset = () => {
+      if(!presetName) return;
+      const newPreset = { name: presetName, host, port, password };
+      obsService.savePreset(newPreset);
+      setPresets(obsService.getPresets());
+      setPresetName('');
+  };
+
+  const handleLoadPreset = (p: ConnectionPreset) => {
+      setHost(p.host);
+      setPort(p.port);
+      if(p.password) setPassword(p.password);
+      setShowPresets(false);
+  };
+
+  const handleDeletePreset = (e: React.MouseEvent, name: string) => {
+      e.stopPropagation();
+      obsService.deletePreset(name);
+      setPresets(obsService.getPresets());
   };
 
   const isConnected = connectionState === ConnectionState.CONNECTED;
@@ -35,7 +63,7 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   }
 
   return (
-    <div className="glass-panel rounded-xl p-5 shadow-lg relative overflow-hidden">
+    <div className="glass-panel rounded-xl p-5 shadow-lg relative overflow-hidden transition-all">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h3 className="text-gray-200 font-bold text-sm uppercase tracking-wider flex items-center gap-2">
@@ -53,6 +81,31 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
 
       {connectionState === ConnectionState.DISCONNECTED || connectionState === ConnectionState.ERROR ? (
         <div className="space-y-4">
+          
+          {/* Preset Toggle */}
+          {presets.length > 0 && (
+             <button 
+                onClick={() => setShowPresets(!showPresets)}
+                className="w-full text-xs flex items-center justify-between bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded border border-gray-700 text-gray-300"
+             >
+                 <span className="flex items-center gap-2"><History className="w-3 h-3" /> Conexões Salvas</span>
+                 <span>{showPresets ? '▲' : '▼'}</span>
+             </button>
+          )}
+
+          {showPresets && (
+              <div className="bg-gray-900 border border-gray-700 rounded-lg max-h-32 overflow-y-auto custom-scroll">
+                  {presets.map(p => (
+                      <div key={p.name} onClick={() => handleLoadPreset(p)} className="px-3 py-2 hover:bg-gray-800 cursor-pointer flex justify-between items-center group border-b border-gray-800 last:border-0">
+                          <span className="text-xs font-bold text-gray-300">{p.name}</span>
+                          <button onClick={(e) => handleDeletePreset(e, p.name)} className="text-gray-600 hover:text-red-400">
+                              <Trash2 className="w-3 h-3" />
+                          </button>
+                      </div>
+                  ))}
+              </div>
+          )}
+
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-2">
               <label className="text-[10px] uppercase text-gray-500 font-bold mb-1 block ml-1">IP Address</label>
@@ -90,6 +143,20 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                     placeholder="••••••••"
                   />
              </div>
+          </div>
+
+          {/* Quick Save */}
+          <div className="flex gap-2">
+               <input 
+                  type="text" 
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  placeholder="Nome (ex: Igreja)..."
+                  className="bg-gray-900/50 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex-1"
+               />
+               <button onClick={handleSavePreset} disabled={!presetName} className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-3 rounded border border-gray-700 disabled:opacity-50">
+                   <Save className="w-3 h-3" />
+               </button>
           </div>
 
           <button 

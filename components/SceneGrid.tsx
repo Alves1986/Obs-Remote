@@ -21,7 +21,7 @@ export const SceneGrid: React.FC<Props> = ({ scenes, currentScene, isConnected }
   };
 
   return (
-    <div className="glass-panel rounded-xl p-1 h-full flex flex-col shadow-2xl bg-[#0f0f13] border border-gray-800">
+    <div className="glass-panel rounded-xl p-1 h-full flex flex-col shadow-2xl bg-[#0f0f13] border border-gray-800 min-h-[300px]">
       {/* Label Strip */}
       <div className="bg-gradient-to-r from-gray-900 to-gray-800 px-4 py-2 rounded-t-lg border-b border-gray-700 flex justify-between items-center mb-1">
          <div className="flex items-center gap-2">
@@ -36,7 +36,7 @@ export const SceneGrid: React.FC<Props> = ({ scenes, currentScene, isConnected }
             <span className="font-mono text-xs uppercase tracking-widest">No Signal</span>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-2 p-2 overflow-y-auto custom-scroll content-start h-full">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2 p-2 overflow-y-auto custom-scroll content-start h-full">
             {scenes.map((scene) => {
             const isActive = currentScene === scene.name;
             return (
@@ -45,8 +45,8 @@ export const SceneGrid: React.FC<Props> = ({ scenes, currentScene, isConnected }
                 onClick={() => obsService.setCurrentScene(scene.name)}
                 className={`
                     relative group overflow-hidden rounded text-left transition-all duration-75
-                    flex flex-col justify-between min-h-[5rem] p-3
-                    border-b-4 active:border-b-0 active:translate-y-1
+                    flex flex-col justify-between min-h-[5rem] md:min-h-[6rem] p-3
+                    border-b-4 active:border-b-0 active:translate-y-1 touch-manipulation
                     ${isActive 
                         ? 'bg-gradient-to-b from-red-600 to-red-700 border-red-900 shadow-[0_0_25px_rgba(220,38,38,0.4)] z-10' 
                         : 'bg-gradient-to-b from-gray-700 to-gray-800 border-gray-950 hover:from-gray-600 hover:to-gray-700 hover:text-white text-gray-400'}
@@ -68,7 +68,7 @@ export const SceneGrid: React.FC<Props> = ({ scenes, currentScene, isConnected }
                     
                     <div className="flex items-center gap-2 relative z-10 mt-auto">
                         {getIcon(scene.name)}
-                        <span className={`font-bold text-xs leading-none uppercase tracking-tight ${isActive ? 'text-white' : 'group-hover:text-gray-200'}`}>
+                        <span className={`font-bold text-xs md:text-sm leading-none uppercase tracking-tight truncate w-full ${isActive ? 'text-white' : 'group-hover:text-gray-200'}`}>
                             {scene.name}
                         </span>
                     </div>

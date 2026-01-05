@@ -1,5 +1,5 @@
 import OBSWebSocket from 'obs-websocket-js';
-import { ConnectionState, ObsScene, AudioSource, StreamStatus } from '../types';
+import { ConnectionState, ObsScene, AudioSource, StreamStatus, TransitionState, ConnectionPreset } from '../types';
 
 type Listener = (data: any) => void;
 
@@ -25,6 +25,8 @@ class ObsService {
   private scenes: ObsScene[] = [];
   private currentScene: string = '';
   private audioSources: AudioSource[] = [];
+  private transitionState: TransitionState = { currentTransition: 'Fade', duration: 300 };
+  
   private status: StreamStatus = {
     streaming: false,
     recording: false,
@@ -79,10 +81,16 @@ class ObsService {
     this.obs.on('InputVolumeChanged', (data) => {
       this.updateAudioSourceLocal(data.inputName, { volume: data.inputVolumeMul });
     });
-    
-    // Note: InputVolumeMeters is high frequency. 
-    // In a real optimized app we would throttle this. 
-    // For now, we rely on state polling in heartbeat or specific events.
+
+    this.obs.on('CurrentSceneTransitionChanged', (data) => {
+        this.transitionState.currentTransition = data.transitionName;
+        this.emit('transition', this.transitionState);
+    });
+
+    this.obs.on('CurrentSceneTransitionDurationChanged', (data) => {
+        this.transitionState.duration = data.transitionDuration;
+        this.emit('transition', this.transitionState);
+    });
   }
 
   // --- Connection Logic ---
@@ -120,12 +128,41 @@ class ObsService {
     this.stopHeartbeat();
   }
 
+  // --- Local Storage Presets ---
+
+  savePreset(preset: ConnectionPreset) {
+      const presets = this.getPresets();
+      const existingIndex = presets.findIndex(p => p.name === preset.name);
+      
+      if (existingIndex >= 0) {
+          presets[existingIndex] = preset;
+      } else {
+          presets.push(preset);
+      }
+      localStorage.setItem('obs_connection_presets', JSON.stringify(presets));
+  }
+
+  getPresets(): ConnectionPreset[] {
+      try {
+          const data = localStorage.getItem('obs_connection_presets');
+          return data ? JSON.parse(data) : [];
+      } catch {
+          return [];
+      }
+  }
+
+  deletePreset(name: string) {
+      const presets = this.getPresets().filter(p => p.name !== name);
+      localStorage.setItem('obs_connection_presets', JSON.stringify(presets));
+  }
+
   // --- Initialization ---
 
   private async initializeData() {
     await this.refreshScenes();
     await this.refreshStatus();
     await this.refreshAudioSources();
+    await this.refreshTransition();
   }
 
   private async refreshScenes() {
@@ -197,6 +234,19 @@ class ObsService {
     }
   }
 
+  private async refreshTransition() {
+      try {
+          const t = await this.obs.call('GetCurrentSceneTransition');
+          this.transitionState = {
+              currentTransition: t.transitionName,
+              duration: t.transitionDuration ?? 300
+          };
+          this.emit('transition', this.transitionState);
+      } catch (e) {
+          console.error(e);
+      }
+  }
+
   // --- Automation Logic (The Backend Intelligence) ---
 
   async startService() {
@@ -204,16 +254,12 @@ class ObsService {
     this.log('Iniciando automação: Culto...', 'info');
     
     try {
-        // 1. Scene
-        // Try to find a scene that matches config or fallback
         const startScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.START))?.name || this.scenes[0]?.name;
         if(startScene) await this.setCurrentScene(startScene);
         
-        // 2. Audio - Unmute Main, Mute Backup (Exclusive Logic)
-        await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); // Mesa Som ON
-        await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  // Blackmagic OFF
+        await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
+        await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
         
-        // 3. Streaming/Rec
         if (!this.status.streaming) await this.obs.call('StartStream');
         if (!this.status.recording) await this.obs.call('StartRecord');
         
@@ -231,12 +277,10 @@ class ObsService {
         const endScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.END))?.name;
         if(endScene) await this.setCurrentScene(endScene);
         
-        // Mute all known audio inputs for safety
         for(const s of this.audioSources) {
             await this.setAudioMute(s.name, true);
         }
         
-        // Delay stop
         setTimeout(async () => {
             if (this.status.streaming) await this.obs.call('StopStream');
             if (this.status.recording) await this.obs.call('StopRecord');
@@ -253,15 +297,12 @@ class ObsService {
     this.log('!!! MODO PÂNICO !!!', 'error');
 
     try {
-        // Stop output immediately
         if (this.status.streaming) await this.obs.call('StopStream');
         if (this.status.recording) await this.obs.call('StopRecord');
         
-        // Switch to safe scene
         const panicScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.PANIC))?.name;
         if(panicScene) await this.setCurrentScene(panicScene);
         
-        // Mute everything
         this.audioSources.forEach(s => this.setAudioMute(s.name, true));
         
     } catch (e: any) {
@@ -271,16 +312,14 @@ class ObsService {
 
   private handleSmartAudioSwitching(sceneName: string) {
       const lower = sceneName.toLowerCase();
-      // Example: If scene is "Camera Movel", prefer Blackmagic Audio
       if (lower.includes('móvel') || lower.includes('movel')) {
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, false); // BM ON
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, true);  // Mesa OFF
+          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, false); 
+          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, true);  
           this.log(`Auto-Audio: Ativado ${CONFIG.EXCLUSIVE_AUDIO.A}`, 'info');
       } 
-      // Example: If scene is "Principal", prefer Mesa Som
       else if (lower.includes('principal') || lower.includes('mesa')) {
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); // Mesa ON
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  // BM OFF
+          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
+          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
           this.log(`Auto-Audio: Ativado ${CONFIG.EXCLUSIVE_AUDIO.B}`, 'info');
       }
   }
@@ -294,6 +333,20 @@ class ObsService {
     } catch (e: any) {
         this.log(`Erro ao mudar cena: ${e.message}`, 'error');
     }
+  }
+
+  async setTransition(transitionName: string) {
+      if (this.state !== ConnectionState.CONNECTED) return;
+      try {
+          await this.obs.call('SetCurrentSceneTransition', { transitionName });
+      } catch (e) { console.error(e); }
+  }
+
+  async setTransitionDuration(duration: number) {
+      if (this.state !== ConnectionState.CONNECTED) return;
+      try {
+          await this.obs.call('SetCurrentSceneTransitionDuration', { transitionDuration: duration });
+      } catch (e) { console.error(e); }
   }
 
   async toggleStream() {
@@ -316,51 +369,39 @@ class ObsService {
 
   async setAudioVolume(sourceName: string, vol: number) {
     if (this.state !== ConnectionState.CONNECTED) return;
-    // Optimistic update
     this.updateAudioSourceLocal(sourceName, { volume: vol });
     try {
         await this.obs.call('SetInputVolume', { inputName: sourceName, inputVolumeMul: vol });
-    } catch (e) {
-        console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
 
   async setAudioMute(sourceName: string, muted: boolean) {
     if (this.state !== ConnectionState.CONNECTED) return;
-    // Optimistic update
     this.updateAudioSourceLocal(sourceName, { muted });
     try {
         await this.obs.call('SetInputMute', { inputName: sourceName, inputMuted: muted });
-        
-        // Exclusive check logic (Manual override)
         if (!muted) {
             if (sourceName === CONFIG.EXCLUSIVE_AUDIO.B) {
-                // If Mesa unmutes, mute BM
                 await this.obs.call('SetInputMute', { inputName: CONFIG.EXCLUSIVE_AUDIO.A, inputMuted: true });
             } else if (sourceName === CONFIG.EXCLUSIVE_AUDIO.A) {
-                 // If BM unmutes, mute Mesa
                  await this.obs.call('SetInputMute', { inputName: CONFIG.EXCLUSIVE_AUDIO.B, inputMuted: true });
             }
         }
-    } catch (e) {
-        console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
 
   async applyAudioPreset(type: 'worship' | 'sermon' | 'service') {
       this.log(`Aplicando preset de áudio: ${type}`, 'info');
-      // Define presets here (hardcoded based on typical church needs)
       const presets: Record<string, { [key: string]: { vol?: number, muted?: boolean } }> = {
           worship: {
-              [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.9, muted: false }, // Mesa loud
+              [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.9, muted: false },
               'Mic Pregador': { muted: true }
           },
           sermon: {
-              [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.5, muted: false }, // Mesa bg
+              [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.5, muted: false },
               'Mic Pregador': { vol: 1.0, muted: false }
           },
           service: {
-               // Default balanced
                [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.8, muted: false },
           }
       };
@@ -379,7 +420,6 @@ class ObsService {
   async ptzAction(command: string, args: any = {}) {
       if (this.state !== ConnectionState.CONNECTED) return;
       try {
-          // Supports obs-ptz plugin conventions
           await this.obs.call('CallVendorRequest', {
               vendorName: 'obs-ptz',
               requestType: command,
@@ -423,7 +463,7 @@ class ObsService {
               memoryUsage: stats.memoryUsage,
               streaming: stream.outputActive,
               streamTimecode: stream.outputTimecode,
-              bitrate: stream.outputBytesPerSec * 8 // approx
+              bitrate: stream.outputBytesPerSec * 8 
           };
           this.emit('status', this.status);
       } catch (e) {
@@ -449,6 +489,7 @@ class ObsService {
         if(event === 'scenes') callback(this.scenes);
         if(event === 'currentScene') callback(this.currentScene);
         if(event === 'audioSources') callback(this.audioSources);
+        if(event === 'transition') callback(this.transitionState);
     }
   }
 

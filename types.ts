@@ -38,3 +38,15 @@ export interface LogEntry {
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
 }
+
+export interface TransitionState {
+  currentTransition: string;
+  duration: number;
+}
+
+export interface ConnectionPreset {
+  name: string;
+  host: string;
+  port: string;
+  password?: string;
+}
