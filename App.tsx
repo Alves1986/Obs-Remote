@@ -91,7 +91,8 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="flex flex-col h-screen text-gray-100 font-sans selection:bg-blue-500/30 bg-gray-950">
+    // Use h-[100dvh] to handle mobile browser address bars correctly
+    <div className="flex flex-col h-screen md:h-screen h-[100dvh] text-gray-100 font-sans selection:bg-blue-500/30 bg-gray-950 overflow-hidden">
       
       {/* 1. Universal Top Status Strip */}
       <div className="flex-none z-50">
@@ -166,9 +167,9 @@ const App: React.FC = () => {
 
       {/* 3. MOBILE LAYOUT (Visible only on small screens) */}
       <div className="md:hidden flex-1 flex flex-col overflow-hidden relative bg-[#0b0f19]">
-          <div className="flex-1 overflow-y-auto p-4 custom-scroll pb-20">
+          <div className="flex-1 overflow-y-auto p-4 custom-scroll pb-24">
               {activeMobileTab === 'scenes' && (
-                  <div className="flex flex-col gap-4 h-full">
+                  <div className="flex flex-col gap-4 min-h-min">
                       <TransitionPanel 
                           transition={transition} 
                           isConnected={connectionState === ConnectionState.CONNECTED} 
@@ -184,7 +185,7 @@ const App: React.FC = () => {
               )}
 
               {activeMobileTab === 'audio' && (
-                  <div className="h-full">
+                  <div className="h-full min-h-[400px]">
                       <AudioMixer 
                           sources={audioSources} 
                           isConnected={connectionState === ConnectionState.CONNECTED}
@@ -193,13 +194,13 @@ const App: React.FC = () => {
               )}
 
               {activeMobileTab === 'ptz' && (
-                  <div className="h-full">
+                  <div className="h-full min-h-[400px]">
                       <PTZPanel isConnected={connectionState === ConnectionState.CONNECTED} />
                   </div>
               )}
 
               {activeMobileTab === 'system' && (
-                  <div className="flex flex-col gap-6">
+                  <div className="flex flex-col gap-6 pb-6">
                       <ConnectionPanel connectionState={connectionState} />
                       <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
                       <Logger logs={logs} />
@@ -207,8 +208,8 @@ const App: React.FC = () => {
               )}
           </div>
 
-          {/* Fixed Bottom Navigation Bar */}
-          <div className="h-16 bg-[#111827] border-t border-gray-800 flex justify-between items-center px-2 pb-safe absolute bottom-0 w-full z-50 shadow-2xl">
+          {/* Fixed Bottom Navigation Bar - Using fixed positioning for reliability */}
+          <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#111827] border-t border-gray-800 flex justify-between items-center px-2 pb-safe z-50 shadow-2xl">
               <MobileTabButton id="scenes" icon={LayoutGrid} label="Cenas" />
               <MobileTabButton id="audio" icon={Sliders} label="Audio" />
               <MobileTabButton id="ptz" icon={Gamepad2} label="PTZ" />
