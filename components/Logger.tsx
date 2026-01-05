@@ -20,7 +20,7 @@ export const Logger: React.FC<Props> = ({ logs }) => {
                 <span className="text-[10px] font-mono uppercase text-gray-500 tracking-wider">System Log</span>
             </div>
             <div className="flex-1 overflow-y-auto p-3 font-mono text-[10px] leading-relaxed custom-scroll bg-gray-950/50">
-                {logs.length === 0 && <span className="text-gray-700 italic">>> Aguardando eventos...</span>}
+                {logs.length === 0 && <span className="text-gray-700 italic">&gt;&gt; Aguardando eventos...</span>}
                 {logs.map(log => (
                     <div key={log.id} className="mb-0.5 border-l-2 border-transparent pl-1 hover:bg-white/5 transition-colors">
                         <span className="text-gray-600 select-none">[{log.timestamp.toLocaleTimeString()}]</span>
