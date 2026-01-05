@@ -9,66 +9,107 @@ interface Props {
 
 export const QRScanner: React.FC<Props> = ({ onScan, onClose }) => {
   const [error, setError] = useState<string | null>(null);
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  // We use a ref to track the instance for cleanup
+  const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
-    // Unique ID for the container
-    const scannerId = "reader-stream"; 
-    
-    // Initialize logic
-    const startScanner = async () => {
-        try {
-            const html5QrCode = new Html5Qrcode(scannerId);
-            scannerRef.current = html5QrCode;
+    let isMounted = true;
+    const scannerId = "reader-stream";
 
-            const config = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 250 },
-                aspectRatio: window.innerWidth / window.innerHeight 
-            };
-            
-            // Start scanning with environment (back) camera
-            await html5QrCode.start(
-                { facingMode: "environment" }, 
-                config,
-                (decodedText) => {
-                    // Success: Stop scanning and return data
-                    html5QrCode.pause(true); 
-                    onScan(decodedText);
-                },
-                (errorMessage) => {
-                    // Ignore frame parse errors
-                }
-            );
-        } catch (err) {
-            console.error("Error starting camera", err);
-            setError("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
-        }
-    };
+    const initScanner = async () => {
+      try {
+        // 1. Create instance
+        const html5QrCode = new Html5Qrcode(scannerId);
+        scannerInstanceRef.current = html5QrCode;
 
-    // Small delay to ensure DOM is ready
-    setTimeout(startScanner, 100);
-
-    // Cleanup
-    return () => {
-        if (scannerRef.current) {
-             if(scannerRef.current.isScanning) {
-                 scannerRef.current.stop().then(() => {
-                     scannerRef.current?.clear();
-                 }).catch(console.error);
-             } else {
-                 scannerRef.current.clear();
+        // 2. Start Scanning
+        // note: We do NOT set aspectRatio in config. 
+        // We let CSS handle the video size to avoid black screens on mobile.
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 } 
+          },
+          (decodedText) => {
+             // Success callback
+             if (isMounted) {
+                 // Stop first, then callback
+                 html5QrCode.stop().then(() => {
+                     html5QrCode.clear();
+                     onScan(decodedText);
+                 }).catch(err => {
+                     console.warn("Stop failed", err);
+                     onScan(decodedText);
+                 });
              }
+          },
+          (errorMessage) => {
+             // Parse error, ignore
+          }
+        );
+
+      } catch (err) {
+        console.error("Camera start error:", err);
+        if (isMounted) {
+           setError("Erro ao acessar câmera. Verifique permissões.");
         }
+      }
     };
-  }, []); // Run once on mount
+
+    // Small delay to ensure the DOM element #reader-stream is painted and sized
+    const timer = setTimeout(initScanner, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+      const instance = scannerInstanceRef.current;
+      if (instance) {
+         // Attempt graceful stop
+         try {
+             instance.stop().then(() => instance.clear()).catch(() => instance.clear());
+         } catch (e) {
+             // ignore errors during cleanup
+         }
+      }
+    };
+  }, [onScan]);
 
   return (
     <div className="fixed inset-0 z-[100] bg-black text-white touch-none">
-       {/* Fullscreen Camera Container */}
-       <div id="reader-stream" className="w-full h-full bg-black object-cover"></div>
+       {/* 
+         Video Container 
+         We use inline styles in the style tag below to forcibly override 
+         html5-qrcode's inline styles on the generated video element.
+       */}
+       <div id="reader-stream" className="w-full h-full bg-black"></div>
 
-       {/* Custom Overlay UI */}
+       {/* Force Video Object Fit */}
+       <style>{`
+         #reader-stream {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            position: relative;
+         }
+         #reader-stream video {
+           object-fit: cover !important;
+           width: 100% !important;
+           height: 100% !important;
+           position: absolute !important;
+           top: 0 !important;
+           left: 0 !important;
+           z-index: 0;
+         }
+         @keyframes scan {
+           0% { top: 0%; opacity: 0; }
+           10% { opacity: 1; }
+           90% { opacity: 1; }
+           100% { top: 100%; opacity: 0; }
+         }
+       `}</style>
+
+       {/* Overlay UI */}
        <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-6 z-10">
           
           {/* Top Bar */}
@@ -110,17 +151,7 @@ export const QRScanner: React.FC<Props> = ({ onScan, onClose }) => {
           </div>
        </div>
 
-       {/* Style for scanning animation */}
-       <style>{`
-         @keyframes scan {
-           0% { top: 0%; opacity: 0; }
-           10% { opacity: 1; }
-           90% { opacity: 1; }
-           100% { top: 100%; opacity: 0; }
-         }
-       `}</style>
-
-       {/* Error State Modal */}
+       {/* Error State */}
        {error && (
            <div className="absolute inset-0 bg-black/95 z-50 flex items-center justify-center p-6 backdrop-blur-sm">
                 <div className="text-center max-w-xs bg-gray-900 border border-gray-800 p-6 rounded-2xl shadow-2xl">
