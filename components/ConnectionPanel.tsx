@@ -22,9 +22,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
-  // Check if page is served via HTTPS
-  const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-
   // Load Presets & Realtime Subscription
   useEffect(() => {
     const load = async () => {
@@ -185,9 +182,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
       )
   }
 
-  // Determine if we need to show the HTTPS warning
-  const showHttpsWarning = isPageHttps && !useSsl && !host.includes('localhost') && !host.includes('127.0.0.1');
-
   return (
     <>
       {showScanner && (
@@ -216,29 +210,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         {connectionState === ConnectionState.DISCONNECTED || connectionState === ConnectionState.ERROR ? (
           <div className="space-y-4">
             
-            {/* HTTPS Warning (Mixed Content) */}
-            {showHttpsWarning && (
-                <div className="bg-red-950/40 border border-red-800/60 p-3 rounded-lg flex gap-3 items-start animate-pulse">
-                    <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                    <div className="text-xs text-red-200">
-                        <strong className="block text-red-400 mb-1">Atenção: Bloqueio de Navegador</strong>
-                        Você está acessando este painel via <b>HTTPS</b>, mas tentando conectar em um IP local inseguro (WS).
-                        <br/><br/>
-                        O navegador <b>vai bloquear</b> essa conexão.
-                        <br/><br/>
-                        <u>Solução:</u> Use um túnel seguro (ngrok) e marque "Usar conexão segura" abaixo, ou acesse o painel via HTTP.
-                    </div>
-                </div>
-            )}
-
-            {/* Mobile IP Warning (Generic) */}
-            <div className="md:hidden bg-blue-900/20 border border-blue-800/50 p-2 rounded flex gap-2 items-start">
-                <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
-                <p className="text-[10px] text-blue-200 leading-tight">
-                    No celular, não use <b>localhost</b>. Use o IP do PC (ex: <b>192.168.0.x</b>).
-                </p>
-            </div>
-
             {/* Preset Toggle */}
             <button 
               onClick={() => setShowPresets(!showPresets)}
