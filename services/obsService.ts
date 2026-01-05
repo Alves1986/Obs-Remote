@@ -326,14 +326,10 @@ class ObsService {
 
   // --- Controls ---
 
-  // Enhanced Scene Switcher: Handles Studio Mode
   async setCurrentScene(sceneName: string) {
     if (this.state !== ConnectionState.CONNECTED) return;
     try {
         if (this.studioMode) {
-            // In studio mode, SetCurrentProgramScene swaps instantly, 
-            // BUT usually we want to set Preview first, then Transition.
-            // For this app, "Clicking" a scene sets PREVIEW. 
             await this.obs.call('SetCurrentPreviewScene', { sceneName });
             this.previewScene = sceneName;
             this.emit('previewScene', this.previewScene);
@@ -345,7 +341,6 @@ class ObsService {
     }
   }
 
-  // Perform Transition (Cut/Fade)
   async triggerTransition() {
       if (this.state !== ConnectionState.CONNECTED) return;
       try {
@@ -360,11 +355,10 @@ class ObsService {
     this.log('Iniciando automação...', 'info');
     
     try {
-        // Ensure we are in studio mode for professional control
         if (!this.studioMode) await this.obs.call('SetStudioModeEnabled', { studioModeEnabled: true });
 
         const startScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.START))?.name || this.scenes[0]?.name;
-        if(startScene) await this.setCurrentScene(startScene); // Sets preview
+        if(startScene) await this.setCurrentScene(startScene); 
         
         await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
         await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
@@ -372,7 +366,6 @@ class ObsService {
         if (!this.status.streaming) await this.obs.call('StartStream');
         if (!this.status.recording) await this.obs.call('StartRecord');
         
-        // Take to program
         await this.triggerTransition();
         this.log('Culto iniciado!', 'success');
     } catch (e: any) {
@@ -472,42 +465,39 @@ class ObsService {
     } catch (e) {}
   }
 
-  // --- PTZ Logic (Updated) ---
+  // --- PTZ Logic (Updated for obs-ptz) ---
 
   async ptzAction(sourceName: string, action: string, arg: string | number) {
       if (this.state !== ConnectionState.CONNECTED) return;
       
-      // If no source is provided, try to find a generic one or fail gracefully
-      if (!sourceName) {
-          console.warn("PTZ Action blocked: No source selected");
-          return;
-      }
-
+      // We assume the user has configured the source name correctly in the UI.
+      // The obs-ptz plugin listens for vendor requests.
+      
       try {
-          // Attempt standard "obs-ptz" vendor request
-          // This supports 'Move', 'Zoom', 'Preset'
-          // Action mapping: 'move', 'zoom', 'preset'
-          // We map our simplified internal actions to the vendor format
-          
           let requestType = 'ptz';
           let requestData: any = { id: sourceName };
 
+          // Map local action names to obs-ptz plugin format
           if (['left', 'right', 'up', 'down', 'stop'].includes(action)) {
              requestData.type = 'move';
              requestData.direction = action;
-          } else if (action === 'zoom') {
+          } else if (action === 'zoom_in') {
              requestData.type = 'zoom';
-             requestData.direction = Number(arg) > 0 ? 'in' : 'out';
+             requestData.direction = 'in';
+          } else if (action === 'zoom_out') {
+             requestData.type = 'zoom';
+             requestData.direction = 'out';
           } else if (action === 'preset') {
              requestData.type = 'preset';
              requestData.num = arg;
-          } else if (action === 'save-preset') {
-              // Plugin dependent, generic implementation might not support save via WS
-              this.log('Save preset via WS not fully supported by all plugins', 'warning');
-              return;
+          } else {
+             // Fallback for stop or unknown
+             requestData.type = 'move';
+             requestData.direction = 'stop';
           }
 
-          console.log("Sending PTZ:", requestData);
+          console.log(`PTZ [${sourceName}]:`, requestData);
+          
           await this.obs.call('CallVendorRequest', {
               vendorName: 'obs-ptz',
               requestType: requestType,
@@ -557,7 +547,6 @@ class ObsService {
     if (!this.listeners.has(event)) this.listeners.set(event, []);
     this.listeners.get(event)!.push(callback);
     
-    // Initial data hydration
     if(event === 'connectionState') callback(this.state);
     if(this.state === ConnectionState.CONNECTED) {
         if(event === 'status') callback(this.status);
