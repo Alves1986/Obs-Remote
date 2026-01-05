@@ -1,148 +1,138 @@
-import React, { useEffect, useRef } from 'react';
-import * as d3 from 'd3';
+import React, { useEffect, useState } from 'react';
 import { AudioSource } from '../types';
 import { obsService } from '../services/obsService';
-import { Volume2, VolumeX, Sliders } from 'lucide-react';
+import { Volume2, VolumeX, Sliders, Activity } from 'lucide-react';
 
 interface Props {
   sources: AudioSource[];
   isConnected: boolean;
 }
 
-const AudioMeter: React.FC<{ volume: number, muted: boolean }> = ({ volume, muted }) => {
-    const svgRef = useRef<SVGSVGElement>(null);
+// Simple Horizontal Meter Component
+const HorizontalMeter: React.FC<{ volume: number, muted: boolean }> = ({ volume, muted }) => {
+    // 30 segments
+    const segments = 30;
+    const activeSegments = Math.floor(volume * segments);
 
-    useEffect(() => {
-        if (!svgRef.current) return;
-        const svg = d3.select(svgRef.current);
-        svg.selectAll('*').remove();
+    return (
+        <div className="flex gap-[1px] h-1.5 w-full bg-gray-900 rounded-full overflow-hidden mt-1 opacity-80">
+            {Array.from({ length: segments }).map((_, i) => {
+                const isActive = !muted && i < activeSegments;
+                let color = 'bg-gray-800';
+                
+                if (isActive) {
+                    // Green -> Yellow -> Red gradient logic
+                    const percent = i / segments;
+                    if (percent > 0.9) color = 'bg-red-500 shadow-[0_0_5px_#ef4444]';
+                    else if (percent > 0.7) color = 'bg-yellow-500';
+                    else color = 'bg-emerald-500';
+                }
 
-        const width = 8;
-        const height = 120;
-        const segments = 30;
-        const segmentHeight = (height - segments) / segments; // 1px gap
-
-        // Dark background track
-        svg.append('rect').attr('width', width).attr('height', height).attr('fill', '#111827');
-
-        if (!muted) {
-            const activeSegments = Math.floor(volume * segments);
-            
-            for (let i = 0; i < segments; i++) {
-                const isActive = i < activeSegments;
-                if(!isActive) continue;
-
-                let color = '#10b981'; // green
-                if (i > segments * 0.7) color = '#fbbf24'; // yellow
-                if (i > segments * 0.9) color = '#ef4444'; // red
-
-                // Draw from bottom
-                const y = height - ((i + 1) * (segmentHeight + 1));
-
-                svg.append('rect')
-                    .attr('x', 1)
-                    .attr('y', y)
-                    .attr('width', width - 2)
-                    .attr('height', segmentHeight)
-                    .attr('fill', color);
-            }
-        }
-    }, [volume, muted]);
-
-    return <svg ref={svgRef} width={8} height={120} className="rounded-sm bg-black border border-gray-800" />;
+                return (
+                    <div 
+                        key={i} 
+                        className={`flex-1 ${color} transition-colors duration-75`} 
+                    />
+                );
+            })}
+        </div>
+    );
 };
 
 export const AudioMixer: React.FC<Props> = ({ sources, isConnected }) => {
   return (
-    <div className="glass-panel rounded-xl p-4 h-full flex flex-col shadow-xl border border-gray-700 bg-[#1a1d24]">
-      <div className="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+    <div className="glass-panel rounded-xl flex flex-col h-full shadow-xl border border-gray-700 bg-[#161920]">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 bg-gray-900/30">
         <h3 className="text-gray-300 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-            <Sliders className="w-3 h-3 text-brand-500" /> Audio Console
+            <Sliders className="w-4 h-4 text-brand-500" /> Audio Mixer
         </h3>
-        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+        {isConnected && (
+            <div className="flex items-center gap-2">
+                 <Activity className="w-3 h-3 text-green-500 animate-pulse" />
+                 <span className="text-[9px] font-mono text-gray-500 uppercase">{sources.length} CANAIS</span>
+            </div>
+        )}
       </div>
 
-      <div className="flex-1 overflow-x-auto pb-2 custom-scroll">
-        <div className="flex gap-2 h-full min-w-max px-1">
-            {sources.map((source) => (
-                <div key={source.name} className="flex flex-col items-center bg-[#0b0d10] p-1.5 rounded border border-gray-800 w-[70px] relative shadow-inner">
-                    
-                    {/* Fader Area */}
-                    <div className="flex flex-1 gap-2 h-full mb-2 w-full justify-center relative bg-[#15181e] rounded py-2 border border-gray-800/50">
-                        <AudioMeter volume={source.volume} muted={source.muted} />
+      {/* List */}
+      <div className="flex-1 overflow-y-auto custom-scroll p-2 space-y-2">
+        {sources.length === 0 && (
+             <div className="h-full flex flex-col items-center justify-center text-gray-600 space-y-2 opacity-50">
+                 <VolumeX className="w-8 h-8" />
+                 <span className="text-xs uppercase font-bold">Sem fontes de áudio</span>
+             </div>
+        )}
 
-                        {/* Fader Track */}
-                        <div className="relative w-6 h-[120px] bg-black rounded-full border border-gray-800 shadow-[inset_0_2px_4px_rgba(0,0,0,1)] flex justify-center">
-                            {/* Center Line */}
-                            <div className="absolute top-2 bottom-2 w-[1px] bg-gray-800"></div>
-
-                             <input
-                                type="range"
-                                min="0"
-                                max="1"
-                                step="0.01"
-                                value={source.volume}
-                                disabled={!isConnected}
-                                onChange={(e) => obsService.setAudioVolume(source.name, parseFloat(e.target.value))}
-                                className="absolute h-[120px] w-[120px] opacity-0 cursor-pointer z-20"
-                                style={{ 
-                                    transform: 'rotate(-90deg) translateY(-48px) translateX(-48px)', 
-                                    transformOrigin: '50% 50%' 
-                                }} 
-                            />
-                            
-                            {/* Fader Cap - Realistic */}
-                            <div 
-                                className={`absolute w-8 h-5 rounded shadow-[0_2px_3px_rgba(0,0,0,0.8)] z-10 pointer-events-none transition-all duration-75 ease-out
-                                    ${source.muted 
-                                        ? 'bg-gray-700 border-t border-gray-600' 
-                                        : 'bg-gradient-to-b from-gray-200 to-gray-400 border-t border-white'}
-                                `}
-                                style={{ 
-                                    bottom: `calc(${source.volume * 100}% - 10px)`,
-                                    left: '-5px'
-                                }}
-                            >
-                                <div className="absolute top-1/2 left-0 w-full h-[1px] bg-black/80"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Channel Controls */}
-                    <div className="w-full text-center space-y-1 mt-auto">
-                        <p className="text-[9px] text-gray-500 font-mono font-bold truncate w-full uppercase" title={source.name}>
-                            {source.name.slice(0, 8)}
-                        </p>
-                        
-                        {/* Mute Button - Soft Key Style */}
-                        <button
-                            onClick={() => obsService.setAudioMute(source.name, !source.muted)}
-                            className={`
-                                w-full py-2 rounded-[4px] text-[9px] font-black uppercase tracking-wider transition-all border-b-2 active:border-b-0 active:translate-y-[2px] shadow-sm
-                                ${source.muted 
-                                    ? 'bg-red-600 border-red-900 text-white shadow-[0_0_10px_rgba(220,38,38,0.4)]' 
-                                    : 'bg-gray-700 border-black text-gray-400 hover:bg-gray-600'}
-                            `}
-                        >
-                            ON
-                        </button>
-                    </div>
-                </div>
-            ))}
-        </div>
-      </div>
-      
-      {/* Preset Buttons */}
-      <div className="grid grid-cols-3 gap-1 mt-3 pt-3 border-t border-gray-700">
-           {['worship', 'sermon', 'service'].map((p) => (
+        {sources.map((source) => (
+            <div 
+                key={source.name} 
+                className={`
+                    flex items-center gap-3 p-3 rounded-lg border transition-all
+                    ${source.muted 
+                        ? 'bg-gray-900/40 border-gray-800 opacity-75' 
+                        : 'bg-gray-800/40 border-gray-700 shadow-sm'}
+                `}
+            >
+                {/* Mute Button */}
                 <button
-                    key={p}
-                    onClick={() => obsService.applyAudioPreset(p as any)}
-                    className="bg-gray-800 hover:bg-gray-700 text-[8px] py-1.5 rounded border border-gray-600 text-gray-300 uppercase font-bold"
+                    onClick={() => obsService.setAudioMute(source.name, !source.muted)}
+                    className={`
+                        w-10 h-10 rounded-md flex items-center justify-center transition-all shrink-0
+                        ${source.muted 
+                            ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20' 
+                            : 'bg-brand-600 text-white shadow-lg hover:bg-brand-500 active:scale-95'}
+                    `}
+                    title={source.muted ? "Unmute" : "Mute"}
                 >
-                    {p.substring(0,6)}
+                    {source.muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                 </button>
-            ))}
+
+                {/* Controls Container */}
+                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <div className="flex justify-between items-end mb-1">
+                        <span className="text-xs font-bold text-gray-200 truncate pr-2" title={source.name}>
+                            {source.name}
+                        </span>
+                        <span className={`text-[10px] font-mono font-bold ${source.muted ? 'text-red-400' : 'text-brand-400'}`}>
+                            {source.muted ? 'MUTED' : `${Math.round(source.volume * 100)}%`}
+                        </span>
+                    </div>
+
+                    {/* Slider Container */}
+                    <div className="relative h-6 flex items-center group">
+                        <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={source.volume}
+                            disabled={!isConnected}
+                            onChange={(e) => obsService.setAudioVolume(source.name, parseFloat(e.target.value))}
+                            className="absolute w-full h-full opacity-0 cursor-pointer z-20"
+                        />
+                        
+                        {/* Custom Track Visual */}
+                        <div className="w-full h-2 bg-gray-950 rounded-full border border-gray-800 relative overflow-hidden z-10">
+                            {/* Fill */}
+                            <div 
+                                className={`h-full transition-all duration-75 ease-out ${source.muted ? 'bg-gray-600' : 'bg-gray-200'}`}
+                                style={{ width: `${source.volume * 100}%` }}
+                            ></div>
+                        </div>
+
+                        {/* Thumb Visual (Simulated) */}
+                        <div 
+                            className="absolute h-4 w-4 bg-white rounded-full shadow-[0_2px_4px_rgba(0,0,0,0.5)] border border-gray-300 z-10 pointer-events-none transition-all duration-75 ease-out group-active:scale-110"
+                            style={{ left: `calc(${source.volume * 100}% - 8px)` }}
+                        ></div>
+                    </div>
+
+                    {/* Meter */}
+                    <HorizontalMeter volume={source.volume} muted={source.muted} />
+                </div>
+            </div>
+        ))}
       </div>
     </div>
   );

@@ -25,8 +25,10 @@ class ObsService {
   // Local state cache
   private scenes: ObsScene[] = [];
   private currentScene: string = '';
+  private previewScene: string = ''; // New: Track Preview
   private audioSources: AudioSource[] = [];
-  private transitionState: TransitionState = { currentTransition: 'Fade', duration: 300 };
+  private transitionState: TransitionState = { currentTransition: 'Fade', duration: 300, availableTransitions: [] };
+  private studioMode: boolean = false;
   
   private status: StreamStatus = {
     streaming: false,
@@ -59,6 +61,16 @@ class ObsService {
       this.currentScene = data.sceneName;
       this.emit('currentScene', this.currentScene);
       this.handleSmartAudioSwitching(data.sceneName);
+    });
+
+    this.obs.on('CurrentPreviewSceneChanged', (data) => {
+      this.previewScene = data.sceneName;
+      this.emit('previewScene', this.previewScene);
+    });
+
+    this.obs.on('StudioModeStateChanged', (data) => {
+      this.studioMode = data.studioModeEnabled;
+      this.emit('studioMode', this.studioMode);
     });
 
     this.obs.on('SceneListChanged', async () => {
@@ -102,12 +114,17 @@ class ObsService {
     this.state = ConnectionState.CONNECTING;
     this.emit('connectionState', this.state);
 
-    const address = host.startsWith('ws://') || host.startsWith('wss://') 
-      ? `${host}:${port}` 
-      : `ws://${host}:${port}`;
+    let cleanHost = host.replace('ws://', '').replace('wss://', '').replace('/', '');
+    if (!cleanHost.includes(':')) {
+        cleanHost = `${cleanHost}:${port}`;
+    }
+
+    const url = `ws://${cleanHost}`;
 
     try {
-      await this.obs.connect(address, password);
+      console.log(`Tentando conectar em: ${url}`);
+      await this.obs.connect(url, password, { rpcVersion: 1 });
+      
       this.state = ConnectionState.CONNECTED;
       this.emit('connectionState', this.state);
       this.log('Conectado ao OBS com sucesso!', 'success');
@@ -116,6 +133,7 @@ class ObsService {
       this.startHeartbeat();
 
     } catch (error: any) {
+      console.error("Connection Error:", error);
       this.state = ConnectionState.ERROR;
       this.emit('connectionState', this.state);
       this.log(`Erro ao conectar: ${error.message || error}`, 'error');
@@ -129,16 +147,7 @@ class ObsService {
     this.stopHeartbeat();
   }
 
-  // --- Supabase Persistence (Database + Realtime) ---
-
-  // Check if Supabase is properly configured
-  private isSupabaseConfigured(): boolean {
-      // Accessing internal property safely or assuming based on placeholder url in client
-      // Since supabase-js doesn't expose url easily on the instance type, we rely on try/catch mostly,
-      // but we can check if the client was initialized with defaults in supabaseClient.ts.
-      // For now, we'll let the try/catch handle the connection error, but suppress the log if it's known missing.
-      return true; 
-  }
+  // --- Supabase Persistence ---
 
   async fetchPresets(): Promise<ConnectionPreset[]> {
     try {
@@ -150,11 +159,9 @@ class ObsService {
       if (error) throw error;
       return data as ConnectionPreset[];
     } catch (e) {
-      // Silent fail for placeholder/dev environment
       if (this.getLocalPresets().length > 0) {
           console.warn('Using local presets due to DB error');
       }
-      // Fallback to local storage if DB fails or is empty
       return this.getLocalPresets();
     }
   }
@@ -171,27 +178,19 @@ class ObsService {
         }]);
 
       if (error) throw error;
-      
-      // Also update local cache for robustness
       const currentLocal = this.getLocalPresets();
       localStorage.setItem('obs_connection_presets', JSON.stringify([...currentLocal, preset]));
-      
       this.log('Conexão salva na nuvem.', 'success');
     } catch (e: any) {
-      // Fallback save to local only
       const currentLocal = this.getLocalPresets();
       localStorage.setItem('obs_connection_presets', JSON.stringify([...currentLocal, preset]));
-      this.log(`Salvo localmente (Nuvem indisponível): ${e.message}`, 'warning');
+      this.log(`Salvo localmente: ${e.message}`, 'warning');
     }
   }
 
   async removePreset(id: number): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('connection_presets')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('connection_presets').delete().eq('id', id);
       if (error) throw error;
       this.log('Conexão removida.', 'info');
     } catch (e: any) {
@@ -199,7 +198,6 @@ class ObsService {
     }
   }
 
-  // Helper for old local storage retrieval
   private getLocalPresets(): ConnectionPreset[] {
       try {
           const data = localStorage.getItem('obs_connection_presets');
@@ -216,6 +214,13 @@ class ObsService {
     await this.refreshStatus();
     await this.refreshAudioSources();
     await this.refreshTransition();
+    
+    // Check Studio Mode
+    try {
+        const studio = await this.obs.call('GetStudioModeEnabled');
+        this.studioMode = studio.studioModeEnabled;
+        this.emit('studioMode', this.studioMode);
+    } catch(e) {}
   }
 
   private async refreshScenes() {
@@ -224,12 +229,20 @@ class ObsService {
       this.scenes = response.scenes.map((s: any, idx: number) => ({
         name: s.sceneName as string,
         index: (s.sceneIndex as number) || idx
-      })).reverse(); // OBS usually sends them bottom-up order in list
+      })).reverse();
       
       this.currentScene = response.currentProgramSceneName;
-      
+      // In Studio Mode, we might want preview info too
+      try {
+          const preview = await this.obs.call('GetCurrentPreviewScene');
+          this.previewScene = preview.currentPreviewSceneName;
+      } catch (e) {
+          this.previewScene = this.currentScene;
+      }
+
       this.emit('scenes', this.scenes);
       this.emit('currentScene', this.currentScene);
+      this.emit('previewScene', this.previewScene);
     } catch (e) {
       console.error('Failed to refresh scenes', e);
     }
@@ -245,7 +258,7 @@ class ObsService {
         recording: record.outputActive,
         streamTimecode: stream.outputTimecode,
         recTimecode: record.outputTimecode,
-        cpuUsage: 0, // Requires stats poll
+        cpuUsage: 0,
         memoryUsage: 0,
         bitrate: 0
       };
@@ -263,36 +276,32 @@ class ObsService {
       );
 
       const sources: AudioSource[] = [];
-      
       for (const input of audioInputs) {
         try {
             const vol = await this.obs.call('GetInputVolume', { inputName: input.inputName as string });
             const mute = await this.obs.call('GetInputMute', { inputName: input.inputName as string });
-            
             sources.push({
                 name: input.inputName as string,
                 volume: vol.inputVolumeMul,
                 muted: mute.inputMuted,
                 type: 'input'
             });
-        } catch (e) {
-            // Ignore inputs that don't support volume/mute
-        }
+        } catch (e) {}
       }
-      
       this.audioSources = sources;
       this.emit('audioSources', this.audioSources);
-    } catch (e) {
-      console.error('Failed to refresh audio', e);
-    }
+    } catch (e) {}
   }
 
   private async refreshTransition() {
       try {
           const t = await this.obs.call('GetCurrentSceneTransition');
+          const list = await this.obs.call('GetSceneTransitionList');
+          
           this.transitionState = {
               currentTransition: t.transitionName,
-              duration: t.transitionDuration ?? 300
+              duration: t.transitionDuration ?? 300,
+              availableTransitions: list.transitions.map((tr: any) => tr.transitionName)
           };
           this.emit('transition', this.transitionState);
       } catch (e) {
@@ -300,15 +309,47 @@ class ObsService {
       }
   }
 
-  // --- Automation Logic (The Backend Intelligence) ---
+  // --- Controls ---
+
+  // Enhanced Scene Switcher: Handles Studio Mode
+  async setCurrentScene(sceneName: string) {
+    if (this.state !== ConnectionState.CONNECTED) return;
+    try {
+        if (this.studioMode) {
+            // In studio mode, SetCurrentProgramScene swaps instantly, 
+            // BUT usually we want to set Preview first, then Transition.
+            // For this app, "Clicking" a scene sets PREVIEW. 
+            await this.obs.call('SetCurrentPreviewScene', { sceneName });
+            this.previewScene = sceneName;
+            this.emit('previewScene', this.previewScene);
+        } else {
+            await this.obs.call('SetCurrentProgramScene', { sceneName });
+        }
+    } catch (e: any) {
+        this.log(`Erro ao mudar cena: ${e.message}`, 'error');
+    }
+  }
+
+  // Perform Transition (Cut/Fade)
+  async triggerTransition() {
+      if (this.state !== ConnectionState.CONNECTED) return;
+      try {
+          await this.obs.call('TriggerStudioModeTransition');
+      } catch(e: any) {
+          this.log(`Erro transição: ${e.message}`, 'error');
+      }
+  }
 
   async startService() {
     if (this.state !== ConnectionState.CONNECTED) return;
-    this.log('Iniciando automação: Culto...', 'info');
+    this.log('Iniciando automação...', 'info');
     
     try {
+        // Ensure we are in studio mode for professional control
+        if (!this.studioMode) await this.obs.call('SetStudioModeEnabled', { studioModeEnabled: true });
+
         const startScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.START))?.name || this.scenes[0]?.name;
-        if(startScene) await this.setCurrentScene(startScene);
+        if(startScene) await this.setCurrentScene(startScene); // Sets preview
         
         await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
         await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
@@ -316,28 +357,28 @@ class ObsService {
         if (!this.status.streaming) await this.obs.call('StartStream');
         if (!this.status.recording) await this.obs.call('StartRecord');
         
-        this.log('Culto iniciado com sucesso!', 'success');
+        // Take to program
+        await this.triggerTransition();
+        this.log('Culto iniciado!', 'success');
     } catch (e: any) {
-        this.log(`Erro ao iniciar culto: ${e.message}`, 'error');
+        this.log(`Erro ao iniciar: ${e.message}`, 'error');
     }
   }
 
   async endService() {
     if (this.state !== ConnectionState.CONNECTED) return;
-    this.log('Encerrando culto...', 'warning');
-
     try {
         const endScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.END))?.name;
-        if(endScene) await this.setCurrentScene(endScene);
-        
-        for(const s of this.audioSources) {
-            await this.setAudioMute(s.name, true);
+        if(endScene) {
+            await this.setCurrentScene(endScene);
+            await this.triggerTransition();
         }
+        
+        for(const s of this.audioSources) await this.setAudioMute(s.name, true);
         
         setTimeout(async () => {
             if (this.status.streaming) await this.obs.call('StopStream');
             if (this.status.recording) await this.obs.call('StopRecord');
-            this.log('Culto finalizado (Stream/REC parados).', 'info');
         }, 5000);
 
     } catch (e: any) {
@@ -348,19 +389,15 @@ class ObsService {
   async panicMode() {
     if (this.state !== ConnectionState.CONNECTED) return;
     this.log('!!! MODO PÂNICO !!!', 'error');
-
     try {
-        if (this.status.streaming) await this.obs.call('StopStream');
-        if (this.status.recording) await this.obs.call('StopRecord');
-        
+        await this.obs.call('StopStream');
+        await this.obs.call('StopRecord');
         const panicScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.PANIC))?.name;
-        if(panicScene) await this.setCurrentScene(panicScene);
-        
+        if(panicScene) {
+            await this.obs.call('SetCurrentProgramScene', { sceneName: panicScene });
+        }
         this.audioSources.forEach(s => this.setAudioMute(s.name, true));
-        
-    } catch (e: any) {
-        this.log(`Erro no pânico: ${e.message}`, 'error');
-    }
+    } catch (e) {}
   }
 
   private handleSmartAudioSwitching(sceneName: string) {
@@ -368,24 +405,11 @@ class ObsService {
       if (lower.includes('móvel') || lower.includes('movel')) {
           this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, false); 
           this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, true);  
-          this.log(`Auto-Audio: Ativado ${CONFIG.EXCLUSIVE_AUDIO.A}`, 'info');
       } 
       else if (lower.includes('principal') || lower.includes('mesa')) {
           this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
           this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
-          this.log(`Auto-Audio: Ativado ${CONFIG.EXCLUSIVE_AUDIO.B}`, 'info');
       }
-  }
-
-  // --- Controls ---
-
-  async setCurrentScene(sceneName: string) {
-    if (this.state !== ConnectionState.CONNECTED) return;
-    try {
-        await this.obs.call('SetCurrentProgramScene', { sceneName });
-    } catch (e: any) {
-        this.log(`Erro ao mudar cena: ${e.message}`, 'error');
-    }
   }
 
   async setTransition(transitionName: string) {
@@ -404,28 +428,18 @@ class ObsService {
 
   async toggleStream() {
     if (this.state !== ConnectionState.CONNECTED) return;
-    try {
-        await this.obs.call('ToggleStream');
-    } catch (e: any) {
-        this.log(`Erro stream: ${e.message}`, 'error');
-    }
+    try { await this.obs.call('ToggleStream'); } catch (e: any) { this.log(e.message, 'error'); }
   }
 
   async toggleRecord() {
     if (this.state !== ConnectionState.CONNECTED) return;
-    try {
-        await this.obs.call('ToggleRecord');
-    } catch (e: any) {
-        this.log(`Erro gravação: ${e.message}`, 'error');
-    }
+    try { await this.obs.call('ToggleRecord'); } catch (e: any) { this.log(e.message, 'error'); }
   }
 
   async setAudioVolume(sourceName: string, vol: number) {
     if (this.state !== ConnectionState.CONNECTED) return;
     this.updateAudioSourceLocal(sourceName, { volume: vol });
-    try {
-        await this.obs.call('SetInputVolume', { inputName: sourceName, inputVolumeMul: vol });
-    } catch (e) { console.error(e); }
+    try { await this.obs.call('SetInputVolume', { inputName: sourceName, inputVolumeMul: vol }); } catch (e) {}
   }
 
   async setAudioMute(sourceName: string, muted: boolean) {
@@ -440,35 +454,24 @@ class ObsService {
                  await this.obs.call('SetInputMute', { inputName: CONFIG.EXCLUSIVE_AUDIO.B, inputMuted: true });
             }
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {}
   }
 
   async applyAudioPreset(type: 'worship' | 'sermon' | 'service') {
-      this.log(`Aplicando preset de áudio: ${type}`, 'info');
       const presets: Record<string, { [key: string]: { vol?: number, muted?: boolean } }> = {
-          worship: {
-              [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.9, muted: false },
-              'Mic Pregador': { muted: true }
-          },
-          sermon: {
-              [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.5, muted: false },
-              'Mic Pregador': { vol: 1.0, muted: false }
-          },
-          service: {
-               [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.8, muted: false },
-          }
+          worship: { [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.9, muted: false }, 'Mic Pregador': { muted: true } },
+          sermon: { [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.5, muted: false }, 'Mic Pregador': { vol: 1.0, muted: false } },
+          service: { [CONFIG.EXCLUSIVE_AUDIO.B]: { vol: 0.8, muted: false } }
       };
-
       const preset = presets[type];
       if (!preset) return;
-
       for (const [name, settings] of Object.entries(preset)) {
           if (settings.vol !== undefined) await this.setAudioVolume(name, settings.vol);
           if (settings.muted !== undefined) await this.setAudioMute(name, settings.muted);
       }
   }
 
-  // --- PTZ Logic (Vendor Requests) ---
+  // --- PTZ Logic ---
 
   async ptzAction(command: string, args: any = {}) {
       if (this.state !== ConnectionState.CONNECTED) return;
@@ -479,13 +482,12 @@ class ObsService {
               requestData: args
           });
       } catch (e: any) {
-          this.log(`Erro PTZ: ${e.message}`, 'warning');
+          // Silent fail or log
       }
   }
 
   async savePtzPreset(name: string) {
       await this.ptzAction('save-preset', { name });
-      this.log(`Preset PTZ salvo: ${name}`, 'success');
   }
 
   async recallPtzPreset(name: string) {
@@ -519,9 +521,7 @@ class ObsService {
               bitrate: stream.outputBytesPerSec * 8 
           };
           this.emit('status', this.status);
-      } catch (e) {
-          // connection might be flaky
-      }
+      } catch (e) {}
     }, 1000);
   }
 
@@ -530,9 +530,7 @@ class ObsService {
   }
 
   on(event: string, callback: Listener) {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
+    if (!this.listeners.has(event)) this.listeners.set(event, []);
     this.listeners.get(event)!.push(callback);
     
     // Initial data hydration
@@ -541,23 +539,21 @@ class ObsService {
         if(event === 'status') callback(this.status);
         if(event === 'scenes') callback(this.scenes);
         if(event === 'currentScene') callback(this.currentScene);
+        if(event === 'previewScene') callback(this.previewScene);
         if(event === 'audioSources') callback(this.audioSources);
         if(event === 'transition') callback(this.transitionState);
+        if(event === 'studioMode') callback(this.studioMode);
     }
   }
 
   off(event: string, callback: Listener) {
     const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      this.listeners.set(event, callbacks.filter(c => c !== callback));
-    }
+    if (callbacks) this.listeners.set(event, callbacks.filter(c => c !== callback));
   }
 
   private emit(event: string, data: any) {
     const callbacks = this.listeners.get(event);
-    if (callbacks) {
-      callbacks.forEach(cb => cb(data));
-    }
+    if (callbacks) callbacks.forEach(cb => cb(data));
   }
 
   private log(msg: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {

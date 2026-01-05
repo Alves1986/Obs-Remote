@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
 import { supabase } from '../services/supabaseClient';
-import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History, Cloud, QrCode } from 'lucide-react';
+import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History, Cloud, QrCode, AlertTriangle } from 'lucide-react';
 import { QRScanner } from './QRScanner';
 
 interface Props {
@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
-  const [host, setHost] = useState('localhost');
+  const [host, setHost] = useState('');
   const [port, setPort] = useState('4455');
   const [password, setPassword] = useState('');
   const [presetName, setPresetName] = useState('');
@@ -30,16 +30,12 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
     };
     load();
 
-    // Supabase Realtime: Update list when other users make changes
     const channel = supabase
       .channel('presets_updates')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'connection_presets' },
-        (payload) => {
-          // Simple strategy: Reload list on any change
-          load();
-        }
+        (payload) => { load(); }
       )
       .subscribe();
 
@@ -49,16 +45,29 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   }, []);
 
   const handleConnect = () => {
-    obsService.connect(host, port, password);
+    // Basic validation
+    let cleanHost = host.trim();
+    if (!cleanHost) {
+        alert("Por favor, insira o endereço IP.");
+        return;
+    }
+    // If user types 192.168.1.5:4455 in host field, handle it
+    if (cleanHost.includes(':') && !cleanHost.includes('http')) {
+        const parts = cleanHost.split(':');
+        cleanHost = parts[0];
+        setHost(cleanHost);
+        setPort(parts[1]);
+        obsService.connect(cleanHost, parts[1], password);
+    } else {
+        obsService.connect(cleanHost, port, password);
+    }
   };
 
   const handleSavePreset = async () => {
       if(!presetName) return;
       const newPreset = { name: presetName, host, port, password };
-      
       setIsLoadingPresets(true);
       await obsService.addPreset(newPreset);
-      // Wait for Realtime or reload manually
       setPresetName('');
       setIsLoadingPresets(false);
   };
@@ -76,58 +85,87 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
       await obsService.removePreset(id);
   };
 
-  // Helper to parse QR Data
+  // Improved QR Parsing Logic
   const handleScanData = (data: string) => {
-    try {
-        console.log('Scanned:', data);
-        let parsedHost = '';
-        let parsedPort = '4455';
-        let parsedPass = '';
+    console.log('Dados crus do QR:', data);
+    
+    let parsedHost = '';
+    let parsedPort = '4455';
+    let parsedPass = '';
+    let success = false;
 
-        // Try JSON format
-        try {
+    try {
+        // 1. Try standard JSON (obs-websocket-v5 format)
+        if (data.trim().startsWith('{')) {
             const json = JSON.parse(data);
-            if(json.host) parsedHost = json.host;
-            if(json.port) parsedPort = String(json.port);
-            if(json.password) parsedPass = json.password;
-            if(json.address) parsedHost = json.address; // Alternative key
-        } catch (e) {
-            // Not JSON, try URL format: ws://password@host:port OR ws://host:port
-            // Remove protocol if exists
-            let clean = data.replace('ws://', '').replace('wss://', '').replace('obs://', '');
+            // Support various naming conventions found in different generators
+            parsedHost = json.host || json.address || json.ip || '';
+            parsedPort = String(json.port || '4455');
+            parsedPass = json.password || json.pass || '';
             
-            // Check for password@host
-            if(clean.includes('@')) {
+            if (parsedHost) success = true;
+        } 
+        
+        // 2. Try URL format (obs:// or ws://)
+        if (!success && (data.includes('://') || data.includes('@'))) {
+            // Remove protocol
+            let clean = data.replace('obs://', '').replace('ws://', '').replace('wss://', '');
+            
+            // Format: password@host:port
+            if (clean.includes('@')) {
                 const parts = clean.split('@');
                 parsedPass = parts[0];
-                clean = parts[1];
+                clean = parts[1]; // remainder is host:port
             }
-
-            // Check for host:port
-            if(clean.includes(':')) {
+            
+            // Format: host:port
+            if (clean.includes(':')) {
                 const parts = clean.split(':');
                 parsedHost = parts[0];
-                parsedPort = parts[1].split('/')[0]; // Remove trailing slash
+                parsedPort = parts[1].split('/')[0]; // remove trailing slash
             } else {
                 parsedHost = clean.split('/')[0];
             }
+            
+            if (parsedHost) success = true;
         }
 
-        if(parsedHost) {
+        // 3. Try Raw format (IP:PORT or just IP)
+        if (!success) {
+            const clean = data.trim();
+            // Regex for IP address (basic)
+            if (clean.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/)) {
+                if (clean.includes(':')) {
+                    const parts = clean.split(':');
+                    parsedHost = parts[0];
+                    parsedPort = parts[1];
+                } else {
+                    parsedHost = clean;
+                }
+                success = true;
+            }
+        }
+
+        if (success) {
+            // Remove "localhost" if scanned on mobile, force user to verify
+            if (parsedHost.includes('localhost') || parsedHost.includes('127.0.0.1')) {
+                alert("Atenção: QR Code contém 'localhost'. No celular, você precisa do IP da rede (ex: 192.168...).");
+            }
+            
             setHost(parsedHost);
             setPort(parsedPort);
             setPassword(parsedPass);
             setShowScanner(false);
             
-            // Optional: Auto Connect if data seems complete
-            // obsService.connect(parsedHost, parsedPort, parsedPass);
+            // Auto connect attempt
+            // setTimeout(() => obsService.connect(parsedHost, parsedPort, parsedPass), 500);
         } else {
-            alert("Formato de QR Code não reconhecido.");
+            alert(`Formato inválido: ${data.substring(0, 20)}...`);
         }
 
     } catch (e) {
         console.error(e);
-        alert("Erro ao ler QR Code");
+        alert("Erro ao processar dados do QR Code.");
     }
   };
 
@@ -176,6 +214,14 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         {connectionState === ConnectionState.DISCONNECTED || connectionState === ConnectionState.ERROR ? (
           <div className="space-y-4">
             
+            {/* Mobile IP Warning */}
+            <div className="md:hidden bg-blue-900/20 border border-blue-800/50 p-2 rounded flex gap-2 items-start">
+                <AlertTriangle className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                <p className="text-[10px] text-blue-200 leading-tight">
+                    No celular, não use <b>localhost</b>. Use o IP do PC (ex: <b>192.168.0.x</b>).
+                </p>
+            </div>
+
             {/* Preset Toggle */}
             <button 
               onClick={() => setShowPresets(!showPresets)}
@@ -226,8 +272,8 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                       type="text" 
                       value={host} 
                       onChange={(e) => setHost(e.target.value)}
-                      className="w-full bg-gray-900/80 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all placeholder-gray-700"
-                      placeholder="localhost"
+                      className="w-full bg-gray-900/80 border border-gray-700 text-gray-200 rounded-lg px-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all placeholder-gray-600"
+                      placeholder="Ex: 192.168.0.10"
                     />
                 </div>
               </div>
@@ -251,8 +297,8 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                       type="password" 
                       value={password} 
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-gray-900/80 border border-gray-700 text-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all placeholder-gray-700"
-                      placeholder="••••••••"
+                      className="w-full bg-gray-900/80 border border-gray-700 text-gray-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none transition-all placeholder-gray-600"
+                      placeholder="Senha do Websocket"
                     />
               </div>
             </div>
@@ -281,7 +327,9 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
             
             {connectionState === ConnectionState.ERROR && (
                 <div className="text-xs text-red-400 bg-red-950/30 border border-red-900/50 p-2 rounded text-center">
-                    Falha na conexão. Verifique IP/Porta.
+                    Falha na conexão. <br/>
+                    1. Verifique se o OBS e Websocket 5.x estão ativos.<br/>
+                    2. Se estiver no celular, verifique se o IP está correto (não use localhost).
                 </div>
             )}
           </div>

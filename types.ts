@@ -42,6 +42,7 @@ export interface LogEntry {
 export interface TransitionState {
   currentTransition: string;
   duration: number;
+  availableTransitions: string[]; // Added list of available transitions
 }
 
 export interface ConnectionPreset {
