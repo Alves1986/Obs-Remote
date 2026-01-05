@@ -1,5 +1,7 @@
 {
   "name": "Painel de Controle OBS Pro",
   "description": "Um painel de controle avançado para OBS Studio focado em igrejas e eventos, com automação, gerenciamento de áudio inteligente e controle PTZ.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }
