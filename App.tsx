@@ -5,11 +5,10 @@ import { ConnectionPanel } from './components/ConnectionPanel';
 import { MacroControls } from './components/MacroControls';
 import { SceneGrid } from './components/SceneGrid';
 import { AudioMixer } from './components/AudioMixer';
-import { PTZPanel } from './components/PTZPanel';
 import { Logger } from './components/Logger';
 import { TransitionPanel } from './components/TransitionPanel';
 import { ConnectionState, ObsScene, AudioSource, StreamStatus, LogEntry, TransitionState } from './types';
-import { LayoutGrid, Sliders, Gamepad2, Settings2 } from 'lucide-react';
+import { LayoutGrid, Sliders, Settings2, Cast } from 'lucide-react';
 
 const App: React.FC = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
@@ -30,7 +29,7 @@ const App: React.FC = () => {
   const [transition, setTransition] = useState<TransitionState>({ currentTransition: 'Fade', duration: 300, availableTransitions: [] });
   
   // Mobile Tab State
-  const [activeMobileTab, setActiveMobileTab] = useState<'scenes' | 'audio' | 'ptz' | 'system'>('scenes');
+  const [activeMobileTab, setActiveMobileTab] = useState<'scenes' | 'audio' | 'system'>('scenes');
 
   useEffect(() => {
     const handleConnection = (s: ConnectionState) => setConnectionState(s);
@@ -73,6 +72,51 @@ const App: React.FC = () => {
     </button>
   );
 
+  // --- VIEW 1: TELA DE LOGIN (INITIAL SCREEN) ---
+  if (connectionState !== ConnectionState.CONNECTED) {
+    return (
+      <div className="h-screen w-screen bg-gray-950 flex flex-col overflow-hidden relative selection:bg-brand-500/30">
+          {/* Background Effects */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900/40 via-gray-950 to-gray-950 z-0"></div>
+          
+          {/* Top Status Strip (Useful for debug even when disconnected) */}
+          <div className="relative z-10 opacity-50 hover:opacity-100 transition-opacity">
+             <StatusStrip status={status} connectionState={connectionState} currentScene={currentScene} />
+          </div>
+
+          {/* Centered Login Box */}
+          <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
+              <div className="w-full max-w-md flex flex-col gap-8 animate-[scan_0.5s_ease-out]">
+                  {/* Branding */}
+                  <div className="text-center space-y-3">
+                      <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-600 to-blue-900 shadow-[0_0_40px_rgba(37,99,235,0.2)] mb-2 ring-1 ring-white/10">
+                          <Cast className="w-10 h-10 text-white" />
+                      </div>
+                      <div>
+                        <h1 className="text-4xl font-black text-white tracking-tighter">
+                            OBS <span className="text-brand-500">CONTROL</span>
+                        </h1>
+                        <p className="text-gray-500 font-mono text-xs uppercase tracking-[0.3em] mt-1">
+                            Sistema de Produção Remota
+                        </p>
+                      </div>
+                  </div>
+
+                  {/* The Connection Panel */}
+                  <div className="backdrop-blur-xl">
+                    <ConnectionPanel connectionState={connectionState} />
+                  </div>
+                  
+                  <div className="text-center text-[10px] text-gray-700 font-mono">
+                      v2.1 • Pro Edition • Secure Access
+                  </div>
+              </div>
+          </div>
+      </div>
+    );
+  }
+
+  // --- VIEW 2: DASHBOARD (ONLY WHEN CONNECTED) ---
   return (
     <div className="flex flex-col h-screen md:h-screen h-[100dvh] text-gray-100 font-sans selection:bg-blue-500/30 bg-gray-950 overflow-hidden">
       
@@ -114,21 +158,18 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* RIGHT: Audio/PTZ - FIXED SCROLLING */}
+          {/* RIGHT: Audio - FIXED SCROLLING */}
           <div className="col-span-12 md:col-span-5 xl:col-span-4 flex flex-col gap-6 h-full overflow-y-auto custom-scroll pr-1">
              <div className="block xl:hidden space-y-4">
                 <ConnectionPanel connectionState={connectionState} />
                 <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
              </div>
 
-             <div className="min-h-[350px]">
+             <div className="flex-1 min-h-[350px] pb-4">
                 <AudioMixer 
                     sources={audioSources} 
                     isConnected={connectionState === ConnectionState.CONNECTED}
                 />
-            </div>
-            <div className="min-h-[300px] pb-4">
-                <PTZPanel isConnected={connectionState === ConnectionState.CONNECTED} />
             </div>
           </div>
         
@@ -164,12 +205,6 @@ const App: React.FC = () => {
                   </div>
               )}
 
-              {activeMobileTab === 'ptz' && (
-                  <div className="h-full min-h-[400px]">
-                      <PTZPanel isConnected={connectionState === ConnectionState.CONNECTED} />
-                  </div>
-              )}
-
               {activeMobileTab === 'system' && (
                   <div className="flex flex-col gap-6 pb-6">
                       <ConnectionPanel connectionState={connectionState} />
@@ -182,7 +217,6 @@ const App: React.FC = () => {
           <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#111827] border-t border-gray-800 flex justify-between items-center px-2 pb-safe z-50 shadow-2xl">
               <MobileTabButton id="scenes" icon={LayoutGrid} label="Cenas" />
               <MobileTabButton id="audio" icon={Sliders} label="Audio" />
-              <MobileTabButton id="ptz" icon={Gamepad2} label="PTZ" />
               <MobileTabButton id="system" icon={Settings2} label="Menu" />
           </div>
       </div>
