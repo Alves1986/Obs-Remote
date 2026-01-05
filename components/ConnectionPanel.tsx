@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
 import { supabase } from '../services/supabaseClient';
-import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History, Cloud, QrCode, AlertTriangle, ShieldCheck } from 'lucide-react';
-import { QRScanner } from './QRScanner';
+import { Plug, Loader2, Check, Server, Lock, Save, Trash2, Cloud, ShieldCheck } from 'lucide-react';
 
 interface Props {
   connectionState: ConnectionState;
@@ -20,7 +19,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   const [presets, setPresets] = useState<ConnectionPreset[]>([]);
   const [showPresets, setShowPresets] = useState(false);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
 
   // Load Presets & Realtime Subscription
   useEffect(() => {
@@ -87,84 +85,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
       await obsService.removePreset(id);
   };
 
-  // Improved QR Parsing Logic
-  const handleScanData = (data: string) => {
-    console.log('Dados crus do QR:', data);
-    
-    let parsedHost = '';
-    let parsedPort = '4455';
-    let parsedPass = '';
-    let parsedSsl = false;
-    let success = false;
-
-    // Detect SSL from QR
-    if (data.includes('wss://')) parsedSsl = true;
-
-    try {
-        // 1. Try standard JSON (obs-websocket-v5 format)
-        if (data.trim().startsWith('{')) {
-            const json = JSON.parse(data);
-            parsedHost = json.host || json.address || json.ip || '';
-            parsedPort = String(json.port || '4455');
-            parsedPass = json.password || json.pass || '';
-            if (parsedHost) success = true;
-        } 
-        
-        // 2. Try URL format (obs:// or ws://)
-        if (!success && (data.includes('://') || data.includes('@'))) {
-            // Remove protocol to get host parts
-            let clean = data.replace('obs://', '').replace('ws://', '').replace('wss://', '');
-            
-            // Format: password@host:port
-            if (clean.includes('@')) {
-                const parts = clean.split('@');
-                parsedPass = parts[0];
-                clean = parts[1]; // remainder is host:port
-            }
-            
-            // Format: host:port
-            if (clean.includes(':')) {
-                const parts = clean.split(':');
-                parsedHost = parts[0];
-                parsedPort = parts[1].split('/')[0]; // remove trailing slash
-            } else {
-                parsedHost = clean.split('/')[0];
-            }
-            
-            if (parsedHost) success = true;
-        }
-
-        // 3. Try Raw format (IP:PORT or just IP)
-        if (!success) {
-            const clean = data.trim();
-            if (clean.match(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/)) {
-                if (clean.includes(':')) {
-                    const parts = clean.split(':');
-                    parsedHost = parts[0];
-                    parsedPort = parts[1];
-                } else {
-                    parsedHost = clean;
-                }
-                success = true;
-            }
-        }
-
-        if (success) {
-            setHost(parsedHost);
-            setPort(parsedPort);
-            setPassword(parsedPass);
-            setUseSsl(parsedSsl);
-            setShowScanner(false);
-        } else {
-            alert(`Formato inválido: ${data.substring(0, 20)}...`);
-        }
-
-    } catch (e) {
-        console.error(e);
-        alert("Erro ao processar dados do QR Code.");
-    }
-  };
-
   const isConnected = connectionState === ConnectionState.CONNECTED;
 
   if (isConnected && !isExpanded) {
@@ -184,13 +104,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
 
   return (
     <>
-      {showScanner && (
-        <QRScanner 
-            onScan={handleScanData} 
-            onClose={() => setShowScanner(false)} 
-        />
-      )}
-      
       <div className="glass-panel rounded-xl p-5 shadow-lg relative overflow-hidden transition-all">
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
@@ -242,15 +155,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                     )}
                 </div>
             )}
-
-            {/* Scan QR Button */}
-            <button 
-                onClick={() => setShowScanner(true)}
-                className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs py-2 rounded border border-gray-700 flex items-center justify-center gap-2 transition-colors group"
-            >
-                <QrCode className="w-4 h-4 text-brand-500 group-hover:text-brand-400" />
-                Ler QR Code
-            </button>
 
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
