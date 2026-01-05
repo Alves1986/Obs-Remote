@@ -45,6 +45,7 @@ export interface TransitionState {
 }
 
 export interface ConnectionPreset {
+  id?: number; // Database ID
   name: string;
   host: string;
   port: string;

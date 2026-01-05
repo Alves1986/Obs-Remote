@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
-import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
+import { Plug, Loader2, Check, X, Server, Lock, Save, Trash2, History, Cloud } from 'lucide-react';
 
 interface Props {
   connectionState: ConnectionState;
@@ -15,21 +16,49 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [presets, setPresets] = useState<ConnectionPreset[]>([]);
   const [showPresets, setShowPresets] = useState(false);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
 
+  // Load Presets & Realtime Subscription
   useEffect(() => {
-    setPresets(obsService.getPresets());
+    const load = async () => {
+      setIsLoadingPresets(true);
+      const data = await obsService.fetchPresets();
+      setPresets(data);
+      setIsLoadingPresets(false);
+    };
+    load();
+
+    // Supabase Realtime: Update list when other users make changes
+    const channel = supabase
+      .channel('presets_updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'connection_presets' },
+        (payload) => {
+          // Simple strategy: Reload list on any change
+          load();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleConnect = () => {
     obsService.connect(host, port, password);
   };
 
-  const handleSavePreset = () => {
+  const handleSavePreset = async () => {
       if(!presetName) return;
       const newPreset = { name: presetName, host, port, password };
-      obsService.savePreset(newPreset);
-      setPresets(obsService.getPresets());
+      
+      setIsLoadingPresets(true);
+      await obsService.addPreset(newPreset);
+      // Wait for Realtime or reload manually
       setPresetName('');
+      setIsLoadingPresets(false);
   };
 
   const handleLoadPreset = (p: ConnectionPreset) => {
@@ -39,10 +68,10 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
       setShowPresets(false);
   };
 
-  const handleDeletePreset = (e: React.MouseEvent, name: string) => {
+  const handleDeletePreset = async (e: React.MouseEvent, id?: number) => {
       e.stopPropagation();
-      obsService.deletePreset(name);
-      setPresets(obsService.getPresets());
+      if (!id) return;
+      await obsService.removePreset(id);
   };
 
   const isConnected = connectionState === ConnectionState.CONNECTED;
@@ -83,26 +112,35 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
         <div className="space-y-4">
           
           {/* Preset Toggle */}
-          {presets.length > 0 && (
-             <button 
-                onClick={() => setShowPresets(!showPresets)}
-                className="w-full text-xs flex items-center justify-between bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded border border-gray-700 text-gray-300"
-             >
-                 <span className="flex items-center gap-2"><History className="w-3 h-3" /> Conexões Salvas</span>
-                 <span>{showPresets ? '▲' : '▼'}</span>
-             </button>
-          )}
+          <button 
+            onClick={() => setShowPresets(!showPresets)}
+            className="w-full text-xs flex items-center justify-between bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded border border-gray-700 text-gray-300 transition-colors"
+          >
+              <span className="flex items-center gap-2">
+                <Cloud className={`w-3 h-3 ${isLoadingPresets ? 'animate-pulse text-brand-500' : ''}`} /> 
+                Conexões Salvas
+              </span>
+              <span>{showPresets ? '▲' : '▼'}</span>
+          </button>
 
           {showPresets && (
-              <div className="bg-gray-900 border border-gray-700 rounded-lg max-h-32 overflow-y-auto custom-scroll">
+              <div className="bg-gray-900 border border-gray-700 rounded-lg max-h-32 overflow-y-auto custom-scroll relative">
+                  {isLoadingPresets && presets.length === 0 && (
+                      <div className="text-center py-2 text-xs text-gray-500">Carregando...</div>
+                  )}
                   {presets.map(p => (
-                      <div key={p.name} onClick={() => handleLoadPreset(p)} className="px-3 py-2 hover:bg-gray-800 cursor-pointer flex justify-between items-center group border-b border-gray-800 last:border-0">
+                      <div key={p.id || p.name} onClick={() => handleLoadPreset(p)} className="px-3 py-2 hover:bg-gray-800 cursor-pointer flex justify-between items-center group border-b border-gray-800 last:border-0">
                           <span className="text-xs font-bold text-gray-300">{p.name}</span>
-                          <button onClick={(e) => handleDeletePreset(e, p.name)} className="text-gray-600 hover:text-red-400">
-                              <Trash2 className="w-3 h-3" />
-                          </button>
+                          {p.id && (
+                              <button onClick={(e) => handleDeletePreset(e, p.id)} className="text-gray-600 hover:text-red-400">
+                                  <Trash2 className="w-3 h-3" />
+                              </button>
+                          )}
                       </div>
                   ))}
+                  {!isLoadingPresets && presets.length === 0 && (
+                      <div className="text-center py-2 text-xs text-gray-500">Nenhum preset salvo</div>
+                  )}
               </div>
           )}
 
@@ -152,10 +190,10 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                   value={presetName}
                   onChange={(e) => setPresetName(e.target.value)}
                   placeholder="Nome (ex: Igreja)..."
-                  className="bg-gray-900/50 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex-1"
+                  className="bg-gray-900/50 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300 flex-1 focus:border-brand-500 outline-none"
                />
-               <button onClick={handleSavePreset} disabled={!presetName} className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-3 rounded border border-gray-700 disabled:opacity-50">
-                   <Save className="w-3 h-3" />
+               <button onClick={handleSavePreset} disabled={!presetName || isLoadingPresets} className="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white px-3 rounded border border-gray-700 disabled:opacity-50">
+                   {isLoadingPresets ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                </button>
           </div>
 
