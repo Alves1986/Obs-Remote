@@ -22,12 +22,17 @@ class ObsService {
   private listeners: Map<string, Listener[]> = new Map();
   private state: ConnectionState = ConnectionState.DISCONNECTED;
   
+  // Connection persistence
+  private shouldReconnect: boolean = false;
+  private reconnectTimer: any = null;
+  private lastConnectionDetails: { host: string, port: string, password?: string, secure: boolean } | null = null;
+
   // Local state cache
   private scenes: ObsScene[] = [];
   private currentScene: string = '';
-  private previewScene: string = ''; // New: Track Preview
+  private previewScene: string = ''; 
   private audioSources: AudioSource[] = [];
-  private inputs: string[] = []; // List of all inputs for PTZ selection
+  private inputs: string[] = []; 
   private transitionState: TransitionState = { currentTransition: 'Fade', duration: 300, availableTransitions: [] };
   private studioMode: boolean = false;
   
@@ -51,11 +56,37 @@ class ObsService {
   // --- Event Setup ---
 
   private setupEventListeners() {
-    this.obs.on('ConnectionClosed', () => {
-      this.state = ConnectionState.DISCONNECTED;
-      this.emit('connectionState', this.state);
-      this.log('Conexão com OBS perdida.', 'error');
+    this.obs.on('ConnectionClosed', (error) => {
       this.stopHeartbeat();
+      
+      // Check if it was an intentional disconnect
+      if (this.shouldReconnect && this.lastConnectionDetails) {
+          this.state = ConnectionState.RECONNECTING;
+          this.emit('connectionState', this.state);
+          this.log(`Conexão perdida. Reconectando em 3s...`, 'warning');
+          
+          if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = setTimeout(() => {
+              this.connect(
+                  this.lastConnectionDetails!.host,
+                  this.lastConnectionDetails!.port,
+                  this.lastConnectionDetails!.password,
+                  this.lastConnectionDetails!.secure
+              );
+          }, 3000);
+      } else {
+          this.state = ConnectionState.DISCONNECTED;
+          this.emit('connectionState', this.state);
+          // Only log error if it wasn't a manual disconnect
+          if (error && error.code !== 1000) {
+             this.log(`Desconectado: ${error.message}`, 'error');
+          }
+      }
+    });
+
+    this.obs.on('ConnectionError', (err) => {
+        console.error("Socket Error", err);
+        // ConnectionClosed usually fires after this, handling the state change there.
     });
 
     this.obs.on('CurrentProgramSceneChanged', (data) => {
@@ -110,20 +141,22 @@ class ObsService {
   // --- Connection Logic ---
 
   async connect(host: string, port: string, password?: string, secure: boolean = false): Promise<void> {
+    // If already connected, do nothing
     if (this.state === ConnectionState.CONNECTED) return;
+
+    // Cache credentials for auto-reconnect
+    this.shouldReconnect = true;
+    this.lastConnectionDetails = { host, port, password, secure };
 
     this.state = ConnectionState.CONNECTING;
     this.emit('connectionState', this.state);
 
-    // Remove protocol prefixes if user typed them manually
     let cleanHost = host.replace('ws://', '').replace('wss://', '').replace('/', '');
     
-    // Ensure Port logic
     if (!cleanHost.includes(':')) {
         cleanHost = `${cleanHost}:${port}`;
     }
 
-    // Determine protocol based on secure flag
     const protocol = secure ? 'wss' : 'ws';
     const url = `${protocol}://${cleanHost}`;
 
@@ -135,18 +168,37 @@ class ObsService {
       this.emit('connectionState', this.state);
       this.log(`Conectado com sucesso (${protocol.toUpperCase()})!`, 'success');
       
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      
       await this.initializeData();
       this.startHeartbeat();
 
     } catch (error: any) {
       console.error("Connection Error:", error);
-      this.state = ConnectionState.ERROR;
-      this.emit('connectionState', this.state);
-      this.log(`Erro ao conectar: ${error.message || error}`, 'error');
+      
+      // If we are in "shouldReconnect" mode (failed attempt), go to RECONNECTING instead of ERROR immediately
+      // unless it's a specific auth error
+      if (this.shouldReconnect) {
+          this.state = ConnectionState.RECONNECTING;
+          this.emit('connectionState', this.state);
+          this.log(`Falha ao conectar. Tentando novamente em 3s...`, 'warning');
+          
+          if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = setTimeout(() => {
+             this.connect(host, port, password, secure);
+          }, 3000);
+      } else {
+          this.state = ConnectionState.ERROR;
+          this.emit('connectionState', this.state);
+          this.log(`Erro ao conectar: ${error.message || error}`, 'error');
+      }
     }
   }
 
   async disconnect() {
+    this.shouldReconnect = false; // Disable auto-reconnect
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    
     await this.obs.disconnect();
     this.state = ConnectionState.DISCONNECTED;
     this.emit('connectionState', this.state);
@@ -470,14 +522,10 @@ class ObsService {
   async ptzAction(sourceName: string, action: string, arg: string | number) {
       if (this.state !== ConnectionState.CONNECTED) return;
       
-      // We assume the user has configured the source name correctly in the UI.
-      // The obs-ptz plugin listens for vendor requests.
-      
       try {
           let requestType = 'ptz';
           let requestData: any = { id: sourceName };
 
-          // Map local action names to obs-ptz plugin format
           if (['left', 'right', 'up', 'down', 'stop'].includes(action)) {
              requestData.type = 'move';
              requestData.direction = action;
@@ -491,7 +539,6 @@ class ObsService {
              requestData.type = 'preset';
              requestData.num = arg;
           } else {
-             // Fallback for stop or unknown
              requestData.type = 'move';
              requestData.direction = 'stop';
           }
@@ -535,7 +582,10 @@ class ObsService {
               bitrate: stream.outputBytesPerSec * 8 
           };
           this.emit('status', this.status);
-      } catch (e) {}
+      } catch (e) {
+          // If stats fail, it might indicate a disconnect that wasn't caught
+          console.warn("Heartbeat failed", e);
+      }
     }, 1000);
   }
 

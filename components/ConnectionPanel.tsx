@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
 import { supabase } from '../services/supabaseClient';
-import { Plug, Loader2, Check, Server, Lock, Save, Trash2, Cloud, ShieldCheck } from 'lucide-react';
+import { Plug, Loader2, Check, Server, Lock, Save, Trash2, Cloud, ShieldCheck, RefreshCw } from 'lucide-react';
 
 interface Props {
   connectionState: ConnectionState;
@@ -12,7 +12,7 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
   const [host, setHost] = useState('');
   const [port, setPort] = useState('4455');
   const [password, setPassword] = useState('');
-  const [useSsl, setUseSsl] = useState(false); // Secure Websocket Toggle
+  const [useSsl, setUseSsl] = useState(true); // Secure Websocket Toggle (Default: Enabled)
   
   const [presetName, setPresetName] = useState('');
   const [isExpanded, setIsExpanded] = useState(true);
@@ -100,6 +100,26 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
               <Plug className="w-4 h-4 text-gray-600 group-hover:text-gray-400" />
           </div>
       )
+  }
+
+  // Handle Loading States (Connecting or Reconnecting)
+  if (connectionState === ConnectionState.CONNECTING || connectionState === ConnectionState.RECONNECTING) {
+      return (
+        <div className="glass-panel rounded-xl p-5 shadow-lg relative overflow-hidden flex flex-col items-center justify-center py-10">
+            <Loader2 className="w-10 h-10 animate-spin mb-3 text-brand-500" />
+            <span className="text-xs font-mono uppercase tracking-widest text-gray-400">
+                {connectionState === ConnectionState.RECONNECTING ? 'Tentando Reconectar...' : 'Estabelecendo Link...'}
+            </span>
+            {connectionState === ConnectionState.RECONNECTING && (
+                <button 
+                    onClick={() => obsService.disconnect()}
+                    className="mt-4 text-[10px] text-red-400 hover:text-red-300 underline"
+                >
+                    Cancelar Reconexão
+                </button>
+            )}
+        </div>
+      );
   }
 
   return (
@@ -240,11 +260,6 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
                     3. Se estiver usando HTTPS, use WSS ou um túnel.
                 </div>
             )}
-          </div>
-        ) : connectionState === ConnectionState.CONNECTING ? (
-          <div className="py-8 flex flex-col items-center justify-center text-gray-400">
-            <Loader2 className="w-10 h-10 animate-spin mb-3 text-brand-500" />
-            <span className="text-xs font-mono uppercase tracking-widest">Estabelecendo Link...</span>
           </div>
         ) : (
           <div className="space-y-4">

@@ -2,7 +2,8 @@ export enum ConnectionState {
   DISCONNECTED = 'DISCONNECTED',
   CONNECTING = 'CONNECTING',
   CONNECTED = 'CONNECTED',
-  ERROR = 'ERROR'
+  ERROR = 'ERROR',
+  RECONNECTING = 'RECONNECTING'
 }
 
 export interface ObsScene {

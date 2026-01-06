@@ -31,6 +31,59 @@ const App: React.FC = () => {
   // Mobile Tab State
   const [activeMobileTab, setActiveMobileTab] = useState<'scenes' | 'audio' | 'system'>('scenes');
 
+  // --- Wake Lock Logic (Prevent Sleep) ---
+  useEffect(() => {
+    let wakeLock: WakeLockSentinel | null = null;
+
+    const requestWakeLock = async () => {
+      // Feature detection
+      if ('wakeLock' in navigator) {
+        try {
+          // @ts-ignore - TS might not fully know 'screen' depending on lib version
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Screen Wake Lock active');
+        } catch (err: any) {
+          // Handle specific errors gracefully
+          if (err.name === 'NotAllowedError') {
+             console.warn('Wake Lock request denied by user/system.');
+          } else if (err.message && err.message.includes('permissions policy')) {
+             console.warn('Wake Lock disallowed by permissions policy (likely iframe restriction).');
+          } else {
+             console.error('Wake Lock Error:', err);
+          }
+        }
+      }
+    };
+
+    // Request on load
+    requestWakeLock();
+
+    // Re-request when visibility changes (e.g. user comes back to tab)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !wakeLock) {
+        requestWakeLock();
+      }
+    };
+
+    // Try to request on first interaction if failed previously (browser restrictions often require user gesture)
+    const handleInteraction = () => {
+        if (!wakeLock) {
+            requestWakeLock();
+        }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('click', handleInteraction, { once: true });
+    window.addEventListener('touchstart', handleInteraction, { once: true });
+
+    return () => {
+      if (wakeLock) wakeLock.release();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+    };
+  }, []);
+
   useEffect(() => {
     const handleConnection = (s: ConnectionState) => setConnectionState(s);
     const handleStatus = (s: StreamStatus) => setStatus(s);
