@@ -37,6 +37,10 @@ class ObsService {
   private transitionState: TransitionState = { currentTransition: 'Fade', duration: 300, availableTransitions: [] };
   private studioMode: boolean = false;
   
+  // Video Config Cache
+  private outputWidth: number = 1920;
+  private outputHeight: number = 1080;
+
   private status: StreamStatus = {
     streaming: false,
     recording: false,
@@ -44,7 +48,9 @@ class ObsService {
     recTimecode: '00:00:00',
     cpuUsage: 0,
     memoryUsage: 0,
-    bitrate: 0
+    bitrate: 0,
+    fps: 0,
+    outputResolution: '1920x1080'
   };
 
   private heartbeatInterval: any;
@@ -169,9 +175,6 @@ class ObsService {
     } catch (error: any) {
       console.error("Connection Error:", error);
       
-      // If this was a manual connect attempt (CONNECTING) and failed, we show Error.
-      // If this was a background reconnect (RECONNECTING) and failed, we keep RECONNECTING and retry.
-      
       if (this.state === ConnectionState.RECONNECTING) {
           this.log(`Falha na reconexão. Tentando novamente em 5s...`, 'warning');
           this.scheduleReconnect(5000);
@@ -179,8 +182,6 @@ class ObsService {
           this.state = ConnectionState.ERROR;
           this.emit('connectionState', this.state);
           this.log(`Erro ao conectar: ${error.message || error}`, 'error');
-          // Even on error, if we have credentials, maybe try again automatically once?
-          // For now, let user manually retry to avoid infinite error loops on bad IP.
       }
     }
   }
@@ -290,6 +291,7 @@ class ObsService {
     // Wrap initialization in try-catch to avoid hanging state if one call fails
     try {
         await this.refreshScenes();
+        await this.refreshVideoSettings(); // Get Res/FPS
         await this.refreshStatus();
         await this.refreshAudioSources();
         await this.refreshTransition();
@@ -303,6 +305,17 @@ class ObsService {
     } catch (e) {
         console.error("Partial initialization failure", e);
     }
+  }
+
+  private async refreshVideoSettings() {
+      try {
+          const video = await this.obs.call('GetVideoSettings');
+          this.outputWidth = video.outputWidth;
+          this.outputHeight = video.outputHeight;
+          this.status.outputResolution = `${this.outputWidth}x${this.outputHeight}`;
+      } catch(e) {
+          console.error("Failed to get video settings", e);
+      }
   }
 
   private async refreshScenes() {
@@ -334,14 +347,13 @@ class ObsService {
       const stream = await this.obs.call('GetStreamStatus');
       const record = await this.obs.call('GetRecordStatus');
       
+      // Note: FPS is updated via GetStats in heartbeat, but we initialize here
       this.status = {
+        ...this.status,
         streaming: stream.outputActive,
         recording: record.outputActive,
         streamTimecode: stream.outputTimecode,
         recTimecode: record.outputTimecode,
-        cpuUsage: 0,
-        memoryUsage: 0,
-        bitrate: 0
       };
       this.emit('status', { ...this.status });
     } catch (e) {
@@ -633,7 +645,9 @@ class ObsService {
               memoryUsage: stats.memoryUsage,
               streaming: stream.outputActive,
               streamTimecode: stream.outputTimecode,
-              bitrate: stream.outputBytesPerSec * 8 
+              bitrate: stream.outputBytesPerSec * 8,
+              fps: stats.activeFps, // Update Active FPS
+              outputResolution: `${this.outputWidth}x${this.outputHeight}`
           };
           this.emit('status', this.status);
       } catch (e) {

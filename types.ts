@@ -26,6 +26,8 @@ export interface StreamStatus {
   cpuUsage: number;
   memoryUsage: number;
   bitrate: number;
+  fps: number; // New: Active FPS
+  outputResolution: string; // New: e.g., "1920x1080"
 }
 
 export interface PtzPreset {

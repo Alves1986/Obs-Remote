@@ -1,6 +1,6 @@
 import React from 'react';
 import { StreamStatus, ConnectionState } from '../types';
-import { Activity, Radio, Cpu, WifiOff, Wifi, Cast } from 'lucide-react';
+import { Activity, Radio, Cpu, WifiOff, Wifi, Cast, Monitor, Film } from 'lucide-react';
 
 interface Props {
   status: StreamStatus;
@@ -40,7 +40,7 @@ export const StatusStrip: React.FC<Props> = ({ status, connectionState, currentS
             <div className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${isLive ? 'bg-red-500 animate-tally' : 'bg-gray-700'}`}></div>
             <div className="flex flex-col leading-none">
                 <span className="font-black text-xs md:text-sm tracking-tighter">ON AIR</span>
-                <span className="font-mono text-[9px] md:text-[10px] opacity-70 tracking-widest hidden sm:inline-block">
+                <span className="font-mono text-[9px] md:text-[10px] opacity-70 tracking-widest inline-block min-w-[50px]">
                     {isLive ? status.streamTimecode.split('.')[0] : '--:--:--'}
                 </span>
             </div>
@@ -75,7 +75,22 @@ export const StatusStrip: React.FC<Props> = ({ status, connectionState, currentS
          </div>
 
          {/* Desktop Telemetry */}
-         <div className="hidden md:flex items-center gap-6 text-xs font-mono text-gray-400">
+         <div className="hidden md:flex items-center gap-4 lg:gap-6 text-xs font-mono text-gray-400">
+             
+             {/* Format Info (Res/FPS) */}
+             <div className="flex flex-col items-end group">
+                <div className="flex items-center gap-1.5 mb-1">
+                    <Film className="w-3 h-3 text-purple-400" />
+                    <span className="group-hover:text-white transition-colors">Output</span>
+                </div>
+                <span className="bg-gray-900 px-2 py-0.5 rounded text-gray-300 border border-gray-800 flex gap-1">
+                    <span>{status.outputResolution}</span>
+                    <span className="text-gray-500">|</span>
+                    <span className="text-brand-400">{status.fps.toFixed(0)}fps</span>
+                </span>
+             </div>
+
+             {/* Network / Bitrate */}
              <div className="flex flex-col items-end group">
                 <div className="flex items-center gap-1.5 mb-1">
                     <Wifi className={`w-3 h-3 ${status.bitrate > 3000 ? 'text-green-500' : 'text-yellow-500'}`} />
@@ -86,10 +101,11 @@ export const StatusStrip: React.FC<Props> = ({ status, connectionState, currentS
                 </span>
              </div>
 
+             {/* CPU */}
              <div className="flex flex-col items-end group">
                 <div className="flex items-center gap-1.5 mb-1">
                     <Cpu className={`w-3 h-3 ${status.cpuUsage > 80 ? 'text-red-500' : 'text-blue-500'}`} />
-                    <span className="group-hover:text-white transition-colors">CPU Load</span>
+                    <span className="group-hover:text-white transition-colors">Load</span>
                 </div>
                  <span className="bg-gray-900 px-2 py-0.5 rounded text-gray-300 border border-gray-800">
                     {status.cpuUsage.toFixed(1)}<span className="text-gray-600">%</span>

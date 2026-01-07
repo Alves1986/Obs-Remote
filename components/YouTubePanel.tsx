@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { youtubeService, ChatMessage } from '../services/youtubeService';
-import { Youtube, Users, ThumbsUp, MessageSquare, Settings, RefreshCw, Eye } from 'lucide-react';
+import { obsService } from '../services/obsService'; // Import OBS Service
+import { StreamStatus } from '../types'; // Import Types
+import { Youtube, Users, ThumbsUp, MessageSquare, Settings, RefreshCw, Eye, Activity, Clock, Monitor } from 'lucide-react';
 
 export const YouTubePanel: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
@@ -10,6 +12,9 @@ export const YouTubePanel: React.FC = () => {
   const [stats, setStats] = useState({ viewers: 0, likes: 0 });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+
+  // OBS Status for Tech Header
+  const [obsStatus, setObsStatus] = useState<StreamStatus | null>(null);
   
   // Internals for polling
   const [chatId, setChatId] = useState<string | null>(null);
@@ -23,6 +28,11 @@ export const YouTubePanel: React.FC = () => {
     if (savedKey) setApiKey(savedKey);
     if (savedVideo) setVideoId(savedVideo);
     if (!savedKey || !savedVideo) setShowConfig(true);
+
+    // Subscribe to OBS Status for tech info
+    const handleStatus = (s: StreamStatus) => setObsStatus(s);
+    obsService.on('status', handleStatus);
+    return () => obsService.off('status', handleStatus);
   }, []);
 
   const saveConfig = () => {
@@ -114,7 +124,7 @@ export const YouTubePanel: React.FC = () => {
 
   return (
     <div className="glass-panel rounded-xl flex flex-col h-[300px] shadow-lg border border-gray-800 bg-[#13151a] overflow-hidden">
-      {/* Header */}
+      {/* 1. Header with YouTube Controls */}
       <div className="bg-gray-900/50 px-3 py-2 border-b border-gray-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
             <Youtube className="w-4 h-4 text-red-500" />
@@ -134,7 +144,33 @@ export const YouTubePanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Row */}
+      {/* 2. Stream Health & Info (Tech Layer) */}
+      <div className="bg-black/30 px-3 py-1.5 border-b border-gray-800 flex items-center justify-between text-[10px] font-mono text-gray-400">
+          <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5" title="Tempo de Live (OBS)">
+                  <Clock className={`w-3 h-3 ${obsStatus?.streaming ? 'text-red-500' : 'text-gray-600'}`} />
+                  <span className={obsStatus?.streaming ? 'text-red-100 font-bold' : ''}>
+                      {obsStatus?.streamTimecode.split('.')[0] || '00:00:00'}
+                  </span>
+              </div>
+              <div className="flex items-center gap-1.5 hidden md:flex" title="Resolução de Saída">
+                  <Monitor className="w-3 h-3 text-brand-500" />
+                  <span>{obsStatus?.outputResolution || '---x---'}</span>
+              </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+               <div className="flex items-center gap-1.5" title="Taxa de Bits de Upload">
+                  <Activity className={`w-3 h-3 ${obsStatus && obsStatus.bitrate > 0 ? 'text-green-500' : 'text-gray-600'}`} />
+                  <span>{obsStatus ? (obsStatus.bitrate / 1000).toFixed(0) : '0'} kbps</span>
+              </div>
+              <div className="bg-gray-800 px-1.5 rounded text-gray-300 font-bold" title="FPS Atual">
+                  {obsStatus?.fps.toFixed(0) || '0'} FPS
+              </div>
+          </div>
+      </div>
+
+      {/* 3. YouTube Stats Row */}
       <div className="grid grid-cols-2 gap-px bg-gray-800 border-b border-gray-800">
           <div className="bg-[#0b0f19] p-2 flex flex-col items-center justify-center gap-1">
               <div className="flex items-center gap-1.5 text-gray-500">
@@ -150,7 +186,7 @@ export const YouTubePanel: React.FC = () => {
           </div>
       </div>
 
-      {/* Chat Area */}
+      {/* 4. Chat Area */}
       <div className="flex-1 overflow-hidden flex flex-col bg-[#0f1115]">
           <div className="px-2 py-1 bg-gray-900/80 border-b border-gray-800 text-[9px] uppercase font-bold text-gray-500 flex items-center gap-1">
              <MessageSquare className="w-3 h-3" /> Últimas Mensagens
