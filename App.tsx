@@ -8,9 +8,9 @@ import { AudioMixer } from './components/AudioMixer';
 import { Logger } from './components/Logger';
 import { TransitionPanel } from './components/TransitionPanel';
 import { QuickTitler } from './components/QuickTitler';
-import { YouTubePanel } from './components/YouTubePanel'; // New Import
+import { YouTubePanel } from './components/YouTubePanel';
 import { ConnectionState, ObsScene, AudioSource, StreamStatus, LogEntry, TransitionState } from './types';
-import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle } from 'lucide-react';
+import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle, Loader2, WifiOff } from 'lucide-react';
 
 const App: React.FC = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
@@ -45,12 +45,11 @@ const App: React.FC = () => {
           wakeLock = await navigator.wakeLock.request('screen');
           console.log('Screen Wake Lock active');
         } catch (err: any) {
-          // CRITICAL FIX: Handle 'permissions policy' error specifically for OBS Docks/iFrames
           if (err.name === 'NotAllowedError') {
              console.warn('Wake Lock request waiting for user gesture.');
           } else if (err.message && (err.message.includes('policy') || err.message.includes('denied'))) {
-             console.warn('Wake Lock disallowed by environment (OBS Dock/iFrame). Feature disabled.');
-             return; // Stop trying if policy forbids it
+             console.warn('Wake Lock disallowed by environment. Feature disabled.');
+             return; 
           } else {
              console.error('Wake Lock Error:', err);
           }
@@ -58,17 +57,12 @@ const App: React.FC = () => {
       }
     };
 
-    // Request on load
     requestWakeLock();
-
-    // Re-request when visibility changes (e.g. user comes back to tab)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !wakeLock) {
         requestWakeLock();
       }
     };
-
-    // Try to request on first interaction if failed previously (browser restrictions often require user gesture)
     const handleInteraction = () => {
         if (!wakeLock) {
             requestWakeLock();
@@ -128,22 +122,21 @@ const App: React.FC = () => {
     </button>
   );
 
+  // Logic: Show Dashboard if CONNECTED or RECONNECTING. Only show Login screen if totally disconnected/error.
+  const isDashboardActive = connectionState === ConnectionState.CONNECTED || connectionState === ConnectionState.RECONNECTING;
+
   // --- VIEW 1: TELA DE LOGIN (INITIAL SCREEN) ---
-  if (connectionState !== ConnectionState.CONNECTED) {
+  if (!isDashboardActive && connectionState !== ConnectionState.CONNECTING) {
     return (
       <div className="h-screen w-screen bg-gray-950 flex flex-col overflow-hidden relative selection:bg-brand-500/30">
-          {/* Background Effects */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gray-900/40 via-gray-950 to-gray-950 z-0"></div>
           
-          {/* Top Status Strip (Useful for debug even when disconnected) */}
           <div className="relative z-10 opacity-50 hover:opacity-100 transition-opacity">
              <StatusStrip status={status} connectionState={connectionState} currentScene={currentScene} />
           </div>
 
-          {/* Centered Login Box */}
           <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10">
               <div className="w-full max-w-md flex flex-col gap-8 animate-[scan_0.5s_ease-out]">
-                  {/* Branding */}
                   <div className="text-center space-y-3">
                       <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-600 to-blue-900 shadow-[0_0_40px_rgba(37,99,235,0.2)] mb-2 ring-1 ring-white/10">
                           <Cast className="w-10 h-10 text-white" />
@@ -158,7 +151,6 @@ const App: React.FC = () => {
                       </div>
                   </div>
 
-                  {/* The Connection Panel */}
                   <div className="backdrop-blur-xl">
                     <ConnectionPanel connectionState={connectionState} />
                   </div>
@@ -171,11 +163,47 @@ const App: React.FC = () => {
       </div>
     );
   }
+  
+  // Also handle initial CONNECTING state with a cleaner full-screen loader
+  if (connectionState === ConnectionState.CONNECTING) {
+      return (
+          <div className="h-screen w-screen bg-gray-950 flex flex-col items-center justify-center gap-4">
+              <Loader2 className="w-12 h-12 text-brand-500 animate-spin" />
+              <span className="text-gray-400 font-mono text-sm uppercase tracking-widest animate-pulse">Conectando ao OBS...</span>
+              <button onClick={() => obsService.disconnect()} className="text-xs text-red-500 hover:text-red-400 underline">Cancelar</button>
+          </div>
+      )
+  }
 
-  // --- VIEW 2: DASHBOARD (ONLY WHEN CONNECTED) ---
+  // --- VIEW 2: DASHBOARD (CONNECTED OR RECONNECTING) ---
   return (
-    <div className="flex flex-col h-screen md:h-screen h-[100dvh] text-gray-100 font-sans selection:bg-blue-500/30 bg-gray-950 overflow-hidden">
+    <div className="flex flex-col h-screen md:h-screen h-[100dvh] text-gray-100 font-sans selection:bg-blue-500/30 bg-gray-950 overflow-hidden relative">
       
+      {/* RECONNECTION OVERLAY - Keeps UI visible but blocks interaction */}
+      {connectionState === ConnectionState.RECONNECTING && (
+          <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center">
+              <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 max-w-xs text-center animate-in fade-in zoom-in duration-300">
+                  <div className="relative">
+                      <div className="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-20"></div>
+                      <div className="bg-gray-800 p-3 rounded-full border border-gray-700 relative z-10">
+                        <WifiOff className="w-8 h-8 text-red-500" />
+                      </div>
+                  </div>
+                  <div>
+                      <h3 className="text-white font-bold text-lg">Conexão Instável</h3>
+                      <p className="text-gray-400 text-xs mt-1">O sistema perdeu a comunicação com o OBS. Tentando restaurar...</p>
+                  </div>
+                  <Loader2 className="w-6 h-6 text-brand-500 animate-spin mt-2" />
+                  <button 
+                    onClick={() => obsService.disconnect()} 
+                    className="text-xs text-gray-500 hover:text-white underline mt-2"
+                  >
+                      Cancelar e Sair
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* 1. Universal Top Status Strip */}
       <div className="flex-none z-50">
           <StatusStrip 
@@ -194,12 +222,9 @@ const App: React.FC = () => {
             <ConnectionPanel connectionState={connectionState} />
             <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1 custom-scroll">
                  <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
-                 
-                 {/* Inserted YouTube Panel Here */}
                  <div className="min-h-[300px]">
                     <YouTubePanel />
                  </div>
-
                  <Logger logs={logs} />
             </div>
           </div>
@@ -225,7 +250,6 @@ const App: React.FC = () => {
                 <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
              </div>
 
-             {/* On Desktop, show Quick Titler here */}
              <div className="h-[220px]">
                 <QuickTitler isConnected={connectionState === ConnectionState.CONNECTED} />
              </div>

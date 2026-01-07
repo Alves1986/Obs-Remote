@@ -26,7 +26,7 @@ class ObsService {
   private shouldReconnect: boolean = false;
   private reconnectTimer: any = null;
   private lastConnectionDetails: { host: string, port: string, password?: string, secure: boolean } | null = null;
-  private heartbeatFailures: number = 0; // Fix: Track consecutive failures
+  private heartbeatFailures: number = 0; 
 
   // Local state cache
   private scenes: ObsScene[] = [];
@@ -60,37 +60,22 @@ class ObsService {
     this.obs.on('ConnectionClosed', (error) => {
       this.stopHeartbeat();
       
-      // Check if it was an intentional disconnect
-      if (this.shouldReconnect && this.lastConnectionDetails) {
-          this.state = ConnectionState.RECONNECTING;
-          this.emit('connectionState', this.state);
-          // Only log if we haven't already logged a reconnecting message recently or it's a new drop
-          if (this.heartbeatFailures === 0) {
-             this.log(`Conexão perdida. Reconectando em 3s...`, 'warning');
-          }
-          
-          if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = setTimeout(() => {
-              this.connect(
-                  this.lastConnectionDetails!.host,
-                  this.lastConnectionDetails!.port,
-                  this.lastConnectionDetails!.password,
-                  this.lastConnectionDetails!.secure
-              );
-          }, 3000);
-      } else {
+      // If we intentionally disconnected, don't trigger reconnect
+      if (!this.shouldReconnect) {
           this.state = ConnectionState.DISCONNECTED;
           this.emit('connectionState', this.state);
-          // Only log error if it wasn't a manual disconnect
-          if (error && error.code !== 1000) {
-             this.log(`Desconectado: ${error.message}`, 'error');
-          }
+          return;
       }
+
+      // If we are already RECONNECTING or CONNECTING, let the existing process handle it
+      if (this.state === ConnectionState.RECONNECTING || this.state === ConnectionState.CONNECTING) return;
+
+      // Otherwise, it was an unexpected drop
+      this.handleUnexpectedDrop();
     });
 
     this.obs.on('ConnectionError', (err) => {
         console.error("Socket Error", err);
-        // ConnectionClosed usually fires after this, handling the state change there.
     });
 
     this.obs.on('CurrentProgramSceneChanged', (data) => {
@@ -145,22 +130,25 @@ class ObsService {
   // --- Connection Logic ---
 
   async connect(host: string, port: string, password?: string, secure: boolean = false): Promise<void> {
-    // If already connected, do nothing
+    // Avoid double connections
     if (this.state === ConnectionState.CONNECTED) return;
+    
+    // Clear any pending reconnect timers
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 
-    // Cache credentials for auto-reconnect
+    // Cache credentials
     this.shouldReconnect = true;
     this.lastConnectionDetails = { host, port, password, secure };
-    this.heartbeatFailures = 0; // Reset failures on new attempt
+    this.heartbeatFailures = 0; 
 
-    this.state = ConnectionState.CONNECTING;
-    this.emit('connectionState', this.state);
+    // Only set CONNECTING if we aren't already RECONNECTING (to preserve UI state)
+    if (this.state !== ConnectionState.RECONNECTING) {
+        this.state = ConnectionState.CONNECTING;
+        this.emit('connectionState', this.state);
+    }
 
-    // Fix: Better URL cleaning to avoid protocol/port duplication issues
     let cleanHost = host.replace(/^(wss?:\/\/)/, '').replace(/\/$/, '');
-    
-    // If the host string has a port (e.g. 192.168.1.5:4455), use it, otherwise append the port arg
-    if (!cleanHost.includes(':') || cleanHost.includes('[')) { // Checking for IPv6 brackets to avoid splitting malformed ipv6
+    if (!cleanHost.includes(':') || cleanHost.includes('[')) { 
         cleanHost = `${cleanHost}:${port}`;
     }
 
@@ -175,39 +163,55 @@ class ObsService {
       this.emit('connectionState', this.state);
       this.log(`Conectado com sucesso (${protocol.toUpperCase()})!`, 'success');
       
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-      
       await this.initializeData();
       this.startHeartbeat();
 
     } catch (error: any) {
       console.error("Connection Error:", error);
       
-      // If we are in "shouldReconnect" mode (failed attempt), go to RECONNECTING instead of ERROR immediately
-      // unless it's a specific auth error
-      if (this.shouldReconnect) {
-          this.state = ConnectionState.RECONNECTING;
-          this.emit('connectionState', this.state);
-          this.log(`Falha ao conectar. Tentando novamente em 3s...`, 'warning');
-          
-          if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = setTimeout(() => {
-             this.connect(host, port, password, secure);
-          }, 3000);
+      // If this was a manual connect attempt (CONNECTING) and failed, we show Error.
+      // If this was a background reconnect (RECONNECTING) and failed, we keep RECONNECTING and retry.
+      
+      if (this.state === ConnectionState.RECONNECTING) {
+          this.log(`Falha na reconexão. Tentando novamente em 5s...`, 'warning');
+          this.scheduleReconnect(5000);
       } else {
           this.state = ConnectionState.ERROR;
           this.emit('connectionState', this.state);
           this.log(`Erro ao conectar: ${error.message || error}`, 'error');
+          // Even on error, if we have credentials, maybe try again automatically once?
+          // For now, let user manually retry to avoid infinite error loops on bad IP.
       }
     }
+  }
+
+  private handleUnexpectedDrop() {
+      if (this.state === ConnectionState.RECONNECTING) return;
+      
+      this.state = ConnectionState.RECONNECTING;
+      this.emit('connectionState', this.state);
+      this.log(`Conexão perdida. Tentando reconectar...`, 'warning');
+      this.scheduleReconnect(2000);
+  }
+
+  private scheduleReconnect(delay: number) {
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = setTimeout(() => {
+          if (this.shouldReconnect && this.lastConnectionDetails) {
+              this.connect(
+                  this.lastConnectionDetails.host,
+                  this.lastConnectionDetails.port,
+                  this.lastConnectionDetails.password,
+                  this.lastConnectionDetails.secure
+              );
+          }
+      }, delay);
   }
 
   async disconnect() {
     this.shouldReconnect = false; // Disable auto-reconnect
     this.heartbeatFailures = 0;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    
-    // Fix: Explicitly stop heartbeat before disconnecting socket
     this.stopHeartbeat();
     
     try {
@@ -222,7 +226,6 @@ class ObsService {
 
   async fetchPresets(): Promise<ConnectionPreset[]> {
     try {
-      // Fix: Check if supabase client is valid before making call
       if (supabase['supabaseUrl'] === 'https://placeholder.supabase.co') throw new Error("No config");
 
       const { data, error } = await supabase
@@ -233,16 +236,12 @@ class ObsService {
       if (error) throw error;
       return data as ConnectionPreset[];
     } catch (e) {
-      if (this.getLocalPresets().length > 0) {
-          console.warn('Using local presets due to DB error or missing config');
-      }
       return this.getLocalPresets();
     }
   }
 
   async addPreset(preset: ConnectionPreset): Promise<void> {
     try {
-      // Fix: Check config
       if (supabase['supabaseUrl'] === 'https://placeholder.supabase.co') throw new Error("No config");
 
       const { error } = await supabase
@@ -288,18 +287,22 @@ class ObsService {
   // --- Initialization ---
 
   private async initializeData() {
-    await this.refreshScenes();
-    await this.refreshStatus();
-    await this.refreshAudioSources();
-    await this.refreshTransition();
-    await this.refreshInputs();
-    
-    // Check Studio Mode
+    // Wrap initialization in try-catch to avoid hanging state if one call fails
     try {
-        const studio = await this.obs.call('GetStudioModeEnabled');
-        this.studioMode = studio.studioModeEnabled;
-        this.emit('studioMode', this.studioMode);
-    } catch(e) {}
+        await this.refreshScenes();
+        await this.refreshStatus();
+        await this.refreshAudioSources();
+        await this.refreshTransition();
+        await this.refreshInputs();
+        
+        try {
+            const studio = await this.obs.call('GetStudioModeEnabled');
+            this.studioMode = studio.studioModeEnabled;
+            this.emit('studioMode', this.studioMode);
+        } catch(e) {}
+    } catch (e) {
+        console.error("Partial initialization failure", e);
+    }
   }
 
   private async refreshScenes() {
@@ -311,7 +314,6 @@ class ObsService {
       })).reverse();
       
       this.currentScene = response.currentProgramSceneName;
-      // In Studio Mode, we might want preview info too
       try {
           const preview = await this.obs.call('GetCurrentPreviewScene');
           this.previewScene = preview.currentPreviewSceneName;
@@ -574,15 +576,11 @@ class ObsService {
       }
   }
 
-  // --- PTZ Logic (Updated for obs-ptz) ---
-
   async ptzAction(sourceName: string, action: string, arg: string | number) {
       if (this.state !== ConnectionState.CONNECTED) return;
-      
       try {
           let requestType = 'ptz';
           let requestData: any = { id: sourceName };
-
           if (['left', 'right', 'up', 'down', 'stop'].includes(action)) {
              requestData.type = 'move';
              requestData.direction = action;
@@ -599,9 +597,6 @@ class ObsService {
              requestData.type = 'move';
              requestData.direction = 'stop';
           }
-
-          console.log(`PTZ [${sourceName}]:`, requestData);
-          
           await this.obs.call('CallVendorRequest', {
               vendorName: 'obs-ptz',
               requestType: requestType,
@@ -628,7 +623,6 @@ class ObsService {
       if (this.state !== ConnectionState.CONNECTED) return;
       try {
           const stats = await this.obs.call('GetStats');
-          // Reset failures on success
           this.heartbeatFailures = 0; 
           
           const stream = await this.obs.call('GetStreamStatus');
@@ -643,29 +637,14 @@ class ObsService {
           };
           this.emit('status', this.status);
       } catch (e) {
-          // Fix: Logic to detect silent disconnects
           this.heartbeatFailures++;
-          console.warn(`Heartbeat failed (${this.heartbeatFailures}/3)`, e);
+          console.warn(`Heartbeat failed (${this.heartbeatFailures}/3)`);
           
           if (this.heartbeatFailures >= 3) {
-              console.error("Connection dead. Forcing reconnect.");
+              console.error("Connection dead. Forcing reconnect logic.");
               this.stopHeartbeat();
-              // Manually trigger the connection close logic to restart the cycle
-              this.obs.disconnect().catch(() => {}); 
-              // We simulate the event that would happen if the socket closed
-              if (this.shouldReconnect) {
-                 this.state = ConnectionState.RECONNECTING;
-                 this.emit('connectionState', this.state);
-                 this.connect(
-                      this.lastConnectionDetails!.host,
-                      this.lastConnectionDetails!.port,
-                      this.lastConnectionDetails!.password,
-                      this.lastConnectionDetails!.secure
-                 );
-              } else {
-                 this.state = ConnectionState.DISCONNECTED;
-                 this.emit('connectionState', this.state);
-              }
+              // Trigger unexpected drop logic
+              this.handleUnexpectedDrop();
           }
       }
     }, 1000);
