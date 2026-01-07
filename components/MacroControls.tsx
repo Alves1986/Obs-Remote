@@ -9,6 +9,7 @@ interface Props {
 export const MacroControls: React.FC<Props> = ({ isConnected }) => {
   const [panicConfirm, setPanicConfirm] = useState(false);
   const [activeButton, setActiveButton] = useState<string | null>(null);
+  const [dskEnabled, setDskEnabled] = useState(false); // Local state for DSK toggle
 
   const handleSafeClick = async (id: string, action: () => Promise<void>) => {
     if (!isConnected || activeButton) return;
@@ -31,6 +32,13 @@ export const MacroControls: React.FC<Props> = ({ isConnected }) => {
     }
     obsService.panicMode();
     setPanicConfirm(false);
+  };
+
+  const toggleDsk = async () => {
+      const newState = !dskEnabled;
+      setDskEnabled(newState);
+      // Assumes there is a source named "Logo" or "Mosca" in your scene
+      await obsService.setSceneItemEnabled("Logo", newState); 
   };
 
   // Broadcast button base style
@@ -114,20 +122,21 @@ export const MacroControls: React.FC<Props> = ({ isConnected }) => {
                 <span className="text-[9px] font-bold text-amber-100 tracking-wider">REC</span>
             </button>
 
-            {/* DSK */}
+            {/* DSK / LOGO TOGGLE */}
             <button
                 disabled={!isConnected}
-                onClick={() => handleSafeClick('logo', async () => { /* Logo toggle logic */ })}
+                onClick={toggleDsk}
                 className={`
-                    ${btnBase} rounded-lg p-2 flex flex-col items-center justify-between border-purple-950
-                    bg-gradient-to-b from-slate-800 to-slate-900 hover:from-purple-900 hover:to-purple-950
+                    ${btnBase} rounded-lg p-2 flex flex-col items-center justify-between
+                    ${dskEnabled ? 'border-purple-600 bg-purple-900/50' : 'border-purple-950 bg-gradient-to-b from-slate-800 to-slate-900'}
+                    hover:from-purple-900 hover:to-purple-950
                 `}
             >
                 <div className="w-full h-1 bg-black/50 rounded-full overflow-hidden">
-                     <div className="w-full h-full bg-purple-500 shadow-[0_0_10px_#a855f7]"></div>
+                     <div className={`w-full h-full bg-purple-500 shadow-[0_0_10px_#a855f7] ${dskEnabled ? 'opacity-100' : 'opacity-20'}`}></div>
                 </div>
-                <ShieldCheck className="w-6 h-6 text-purple-400" />
-                <span className="text-[9px] font-bold text-purple-100 tracking-wider">DSK</span>
+                <ShieldCheck className={`w-6 h-6 ${dskEnabled ? 'text-white drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]' : 'text-purple-400'}`} />
+                <span className={`text-[9px] font-bold tracking-wider ${dskEnabled ? 'text-white' : 'text-purple-100'}`}>LOGO/DSK</span>
             </button>
         </div>
 

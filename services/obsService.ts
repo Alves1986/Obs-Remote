@@ -26,6 +26,7 @@ class ObsService {
   private shouldReconnect: boolean = false;
   private reconnectTimer: any = null;
   private lastConnectionDetails: { host: string, port: string, password?: string, secure: boolean } | null = null;
+  private heartbeatFailures: number = 0; // Fix: Track consecutive failures
 
   // Local state cache
   private scenes: ObsScene[] = [];
@@ -63,7 +64,10 @@ class ObsService {
       if (this.shouldReconnect && this.lastConnectionDetails) {
           this.state = ConnectionState.RECONNECTING;
           this.emit('connectionState', this.state);
-          this.log(`Conexão perdida. Reconectando em 3s...`, 'warning');
+          // Only log if we haven't already logged a reconnecting message recently or it's a new drop
+          if (this.heartbeatFailures === 0) {
+             this.log(`Conexão perdida. Reconectando em 3s...`, 'warning');
+          }
           
           if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
           this.reconnectTimer = setTimeout(() => {
@@ -147,13 +151,16 @@ class ObsService {
     // Cache credentials for auto-reconnect
     this.shouldReconnect = true;
     this.lastConnectionDetails = { host, port, password, secure };
+    this.heartbeatFailures = 0; // Reset failures on new attempt
 
     this.state = ConnectionState.CONNECTING;
     this.emit('connectionState', this.state);
 
-    let cleanHost = host.replace('ws://', '').replace('wss://', '').replace('/', '');
+    // Fix: Better URL cleaning to avoid protocol/port duplication issues
+    let cleanHost = host.replace(/^(wss?:\/\/)/, '').replace(/\/$/, '');
     
-    if (!cleanHost.includes(':')) {
+    // If the host string has a port (e.g. 192.168.1.5:4455), use it, otherwise append the port arg
+    if (!cleanHost.includes(':') || cleanHost.includes('[')) { // Checking for IPv6 brackets to avoid splitting malformed ipv6
         cleanHost = `${cleanHost}:${port}`;
     }
 
@@ -197,18 +204,27 @@ class ObsService {
 
   async disconnect() {
     this.shouldReconnect = false; // Disable auto-reconnect
+    this.heartbeatFailures = 0;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     
-    await this.obs.disconnect();
+    // Fix: Explicitly stop heartbeat before disconnecting socket
+    this.stopHeartbeat();
+    
+    try {
+       await this.obs.disconnect();
+    } catch (e) { console.error("Disconnect error", e); }
+    
     this.state = ConnectionState.DISCONNECTED;
     this.emit('connectionState', this.state);
-    this.stopHeartbeat();
   }
 
   // --- Supabase Persistence ---
 
   async fetchPresets(): Promise<ConnectionPreset[]> {
     try {
+      // Fix: Check if supabase client is valid before making call
+      if (supabase['supabaseUrl'] === 'https://placeholder.supabase.co') throw new Error("No config");
+
       const { data, error } = await supabase
         .from('connection_presets')
         .select('*')
@@ -218,7 +234,7 @@ class ObsService {
       return data as ConnectionPreset[];
     } catch (e) {
       if (this.getLocalPresets().length > 0) {
-          console.warn('Using local presets due to DB error');
+          console.warn('Using local presets due to DB error or missing config');
       }
       return this.getLocalPresets();
     }
@@ -226,6 +242,9 @@ class ObsService {
 
   async addPreset(preset: ConnectionPreset): Promise<void> {
     try {
+      // Fix: Check config
+      if (supabase['supabaseUrl'] === 'https://placeholder.supabase.co') throw new Error("No config");
+
       const { error } = await supabase
         .from('connection_presets')
         .insert([{ 
@@ -242,12 +261,13 @@ class ObsService {
     } catch (e: any) {
       const currentLocal = this.getLocalPresets();
       localStorage.setItem('obs_connection_presets', JSON.stringify([...currentLocal, preset]));
-      this.log(`Salvo localmente: ${e.message}`, 'warning');
+      this.log(`Salvo localmente: ${e.message || 'Configuração offline'}`, 'warning');
     }
   }
 
   async removePreset(id: number): Promise<void> {
     try {
+       if (supabase['supabaseUrl'] === 'https://placeholder.supabase.co') throw new Error("No config");
       const { error } = await supabase.from('connection_presets').delete().eq('id', id);
       if (error) throw error;
       this.log('Conexão removida.', 'info');
@@ -517,6 +537,43 @@ class ObsService {
     } catch (e) {}
   }
 
+  // --- Dynamic Content & Toggles ---
+
+  async setTextSettings(sourceName: string, text: string) {
+      if (this.state !== ConnectionState.CONNECTED) return;
+      try {
+          await this.obs.call('SetInputSettings', {
+              inputName: sourceName,
+              inputSettings: { text: text }
+          });
+          this.log(`Texto '${sourceName}' atualizado.`, 'success');
+      } catch (e: any) {
+          this.log(`Erro ao atualizar texto: ${e.message}`, 'error');
+      }
+  }
+
+  async setSceneItemEnabled(sourceName: string, enabled: boolean) {
+      if (this.state !== ConnectionState.CONNECTED) return;
+      try {
+          // 1. Get Scene Item ID in current scene
+          const scene = await this.obs.call('GetCurrentProgramScene');
+          const itemId = await this.obs.call('GetSceneItemId', {
+             sceneName: scene.currentProgramSceneName,
+             sourceName: sourceName
+          });
+          
+          // 2. Set Visibility
+          await this.obs.call('SetSceneItemEnabled', {
+             sceneName: scene.currentProgramSceneName,
+             sceneItemId: itemId.sceneItemId,
+             sceneItemEnabled: enabled
+          });
+          this.log(`${sourceName} ${enabled ? 'exibido' : 'oculto'}.`, 'info');
+      } catch (e: any) {
+          this.log(`Erro item visible: ${e.message}`, 'error');
+      }
+  }
+
   // --- PTZ Logic (Updated for obs-ptz) ---
 
   async ptzAction(sourceName: string, action: string, arg: string | number) {
@@ -571,6 +628,9 @@ class ObsService {
       if (this.state !== ConnectionState.CONNECTED) return;
       try {
           const stats = await this.obs.call('GetStats');
+          // Reset failures on success
+          this.heartbeatFailures = 0; 
+          
           const stream = await this.obs.call('GetStreamStatus');
           
           this.status = {
@@ -583,8 +643,30 @@ class ObsService {
           };
           this.emit('status', this.status);
       } catch (e) {
-          // If stats fail, it might indicate a disconnect that wasn't caught
-          console.warn("Heartbeat failed", e);
+          // Fix: Logic to detect silent disconnects
+          this.heartbeatFailures++;
+          console.warn(`Heartbeat failed (${this.heartbeatFailures}/3)`, e);
+          
+          if (this.heartbeatFailures >= 3) {
+              console.error("Connection dead. Forcing reconnect.");
+              this.stopHeartbeat();
+              // Manually trigger the connection close logic to restart the cycle
+              this.obs.disconnect().catch(() => {}); 
+              // We simulate the event that would happen if the socket closed
+              if (this.shouldReconnect) {
+                 this.state = ConnectionState.RECONNECTING;
+                 this.emit('connectionState', this.state);
+                 this.connect(
+                      this.lastConnectionDetails!.host,
+                      this.lastConnectionDetails!.port,
+                      this.lastConnectionDetails!.password,
+                      this.lastConnectionDetails!.secure
+                 );
+              } else {
+                 this.state = ConnectionState.DISCONNECTED;
+                 this.emit('connectionState', this.state);
+              }
+          }
       }
     }, 1000);
   }

@@ -30,18 +30,21 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
     };
     load();
 
-    const channel = supabase
-      .channel('presets_updates')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'connection_presets' },
-        (payload) => { load(); }
-      )
-      .subscribe();
+    // Fix: Check for placeholder URL before subscribing to avoid errors
+    if (supabase['supabaseUrl'] && supabase['supabaseUrl'] !== 'https://placeholder.supabase.co') {
+        const channel = supabase
+          .channel('presets_updates')
+          .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'connection_presets' },
+            (payload) => { load(); }
+          )
+          .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+        return () => {
+          supabase.removeChannel(channel);
+        };
+    }
   }, []);
 
   const handleConnect = () => {
@@ -76,6 +79,7 @@ export const ConnectionPanel: React.FC<Props> = ({ connectionState }) => {
       setHost(p.host);
       setPort(p.port);
       if(p.password) setPassword(p.password);
+      setPresetName(p.name); // Fix: Set the preset name state
       setShowPresets(false);
   };
 

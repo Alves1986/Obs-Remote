@@ -7,8 +7,10 @@ import { SceneGrid } from './components/SceneGrid';
 import { AudioMixer } from './components/AudioMixer';
 import { Logger } from './components/Logger';
 import { TransitionPanel } from './components/TransitionPanel';
+import { QuickTitler } from './components/QuickTitler';
+import { YouTubePanel } from './components/YouTubePanel'; // New Import
 import { ConnectionState, ObsScene, AudioSource, StreamStatus, LogEntry, TransitionState } from './types';
-import { LayoutGrid, Sliders, Settings2, Cast } from 'lucide-react';
+import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle } from 'lucide-react';
 
 const App: React.FC = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
@@ -29,7 +31,7 @@ const App: React.FC = () => {
   const [transition, setTransition] = useState<TransitionState>({ currentTransition: 'Fade', duration: 300, availableTransitions: [] });
   
   // Mobile Tab State
-  const [activeMobileTab, setActiveMobileTab] = useState<'scenes' | 'audio' | 'system'>('scenes');
+  const [activeMobileTab, setActiveMobileTab] = useState<'scenes' | 'audio' | 'gfx' | 'social' | 'system'>('scenes');
 
   // --- Wake Lock Logic (Prevent Sleep) ---
   useEffect(() => {
@@ -43,11 +45,12 @@ const App: React.FC = () => {
           wakeLock = await navigator.wakeLock.request('screen');
           console.log('Screen Wake Lock active');
         } catch (err: any) {
-          // Handle specific errors gracefully
+          // CRITICAL FIX: Handle 'permissions policy' error specifically for OBS Docks/iFrames
           if (err.name === 'NotAllowedError') {
-             console.warn('Wake Lock request denied by user/system.');
-          } else if (err.message && err.message.includes('permissions policy')) {
-             console.warn('Wake Lock disallowed by permissions policy (likely iframe restriction).');
+             console.warn('Wake Lock request waiting for user gesture.');
+          } else if (err.message && (err.message.includes('policy') || err.message.includes('denied'))) {
+             console.warn('Wake Lock disallowed by environment (OBS Dock/iFrame). Feature disabled.');
+             return; // Stop trying if policy forbids it
           } else {
              console.error('Wake Lock Error:', err);
           }
@@ -191,9 +194,13 @@ const App: React.FC = () => {
             <ConnectionPanel connectionState={connectionState} />
             <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1 custom-scroll">
                  <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
-                 <div className="mt-auto">
-                    <Logger logs={logs} />
+                 
+                 {/* Inserted YouTube Panel Here */}
+                 <div className="min-h-[300px]">
+                    <YouTubePanel />
                  </div>
+
+                 <Logger logs={logs} />
             </div>
           </div>
 
@@ -211,11 +218,16 @@ const App: React.FC = () => {
             />
           </div>
 
-          {/* RIGHT: Audio - FIXED SCROLLING */}
+          {/* RIGHT: Audio & Graphics */}
           <div className="col-span-12 md:col-span-5 xl:col-span-4 flex flex-col gap-6 h-full overflow-y-auto custom-scroll pr-1">
              <div className="block xl:hidden space-y-4">
                 <ConnectionPanel connectionState={connectionState} />
                 <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
+             </div>
+
+             {/* On Desktop, show Quick Titler here */}
+             <div className="h-[220px]">
+                <QuickTitler isConnected={connectionState === ConnectionState.CONNECTED} />
              </div>
 
              <div className="flex-1 min-h-[350px] pb-4">
@@ -258,6 +270,18 @@ const App: React.FC = () => {
                   </div>
               )}
 
+              {activeMobileTab === 'gfx' && (
+                  <div className="h-full">
+                      <QuickTitler isConnected={connectionState === ConnectionState.CONNECTED} />
+                  </div>
+              )}
+
+              {activeMobileTab === 'social' && (
+                  <div className="h-full flex flex-col gap-4">
+                      <YouTubePanel />
+                  </div>
+              )}
+
               {activeMobileTab === 'system' && (
                   <div className="flex flex-col gap-6 pb-6">
                       <ConnectionPanel connectionState={connectionState} />
@@ -269,7 +293,9 @@ const App: React.FC = () => {
 
           <div className="fixed bottom-0 left-0 right-0 h-16 bg-[#111827] border-t border-gray-800 flex justify-between items-center px-2 pb-safe z-50 shadow-2xl">
               <MobileTabButton id="scenes" icon={LayoutGrid} label="Cenas" />
+              <MobileTabButton id="gfx" icon={Type} label="Títulos" />
               <MobileTabButton id="audio" icon={Sliders} label="Audio" />
+              <MobileTabButton id="social" icon={MessageCircle} label="Social" />
               <MobileTabButton id="system" icon={Settings2} label="Menu" />
           </div>
       </div>
