@@ -10,7 +10,7 @@ interface Props {
 export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) => {
   const [enabled, setEnabled] = useState(true); // Default ON
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [refreshRate, setRefreshRate] = useState(1000); // 1 FPS by default
+  const [refreshRate, setRefreshRate] = useState(1000); // Default to Eco (1s) initially
   const [isError, setIsError] = useState(false);
 
   // Use a ref to track the timeout so we can clear it on unmount
@@ -60,9 +60,9 @@ export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) =
     };
   }, [isConnected, enabled, currentScene, refreshRate]);
 
-  // Toggle speed between Slow (1s) and Fast (300ms)
+  // Toggle speed between Eco (1000ms) and Turbo (100ms)
   const toggleSpeed = () => {
-      setRefreshRate(prev => prev === 1000 ? 300 : 1000);
+      setRefreshRate(prev => prev === 1000 ? 100 : 1000);
   };
 
   return (
@@ -72,7 +72,7 @@ export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) =
             <div className="flex items-center gap-2">
                  <div className={`w-2 h-2 rounded-full ${enabled && isConnected && !isError ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
                  <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-black drop-shadow-md">
-                     Monitor {enabled ? (refreshRate < 500 ? 'HQ' : 'Eco') : 'OFF'}
+                     Monitor {enabled ? (refreshRate < 500 ? 'TURBO' : 'ECO') : 'OFF'}
                  </span>
             </div>
             
@@ -80,10 +80,10 @@ export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) =
                 <button 
                     onClick={toggleSpeed}
                     disabled={!enabled}
-                    className={`p-1.5 rounded transition-all ${refreshRate < 500 ? 'text-yellow-400 bg-white/10' : 'text-gray-400 hover:text-white'}`}
-                    title="Alternar Velocidade (Eco / Rápido)"
+                    className={`p-1.5 rounded transition-all ${refreshRate < 500 ? 'text-yellow-400 bg-white/20 shadow-[0_0_10px_rgba(250,204,21,0.2)]' : 'text-gray-400 hover:text-white'}`}
+                    title="Alternar Velocidade (Eco / Turbo)"
                 >
-                    <Zap className="w-3.5 h-3.5" />
+                    <Zap className="w-3.5 h-3.5 fill-current" />
                 </button>
                 <button 
                     onClick={() => setEnabled(!enabled)}
@@ -108,7 +108,7 @@ export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) =
                 <div className="flex flex-col items-center justify-center gap-2 text-gray-700">
                     {isError ? <WifiOff className="w-10 h-10 opacity-20 text-red-500" /> : <Film className="w-10 h-10 opacity-20" />}
                     <span className="text-[10px] uppercase font-mono">
-                        {!isConnected ? 'Desconectado' : isError ? 'Erro de Sinal' : enabled ? 'Carregando...' : 'Monitor Pausado'}
+                        {!isConnected ? 'Desconectado' : isError ? 'Sinal Fraco' : enabled ? 'Carregando...' : 'Monitor Pausado'}
                     </span>
                 </div>
             )}

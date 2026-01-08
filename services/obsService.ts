@@ -229,12 +229,12 @@ class ObsService {
       if (this.state !== ConnectionState.CONNECTED) return null;
       try {
           // Requests a compressed screenshot of the source (Scene)
-          // Optimized: JPEG, Quality 35, width 320px for performance
+          // Optimized for Turbo Mode: JPEG, Quality 20, width 280px for high speed
           const response = await this.obs.call('GetSourceScreenshot', {
               sourceName: sourceName,
               imageFormat: 'jpeg',
-              imageCompressionQuality: 35, 
-              imageWidth: 320 
+              imageCompressionQuality: 20, 
+              imageWidth: 280 
           });
           return response.imageData;
       } catch (e) {
