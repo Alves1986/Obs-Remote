@@ -14,6 +14,7 @@ import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle, Loader2, Wif
 
 const App: React.FC = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
+  // CRITICAL FIX: Initialize ALL fields of StreamStatus to avoid 'undefined' crashes in child components
   const [status, setStatus] = useState<StreamStatus>({
     streaming: false,
     recording: false,
@@ -21,7 +22,9 @@ const App: React.FC = () => {
     recTimecode: '00:00:00',
     cpuUsage: 0,
     memoryUsage: 0,
-    bitrate: 0
+    bitrate: 0,
+    fps: 0,
+    outputResolution: '---'
   });
   const [scenes, setScenes] = useState<ObsScene[]>([]);
   const [currentScene, setCurrentScene] = useState<string>('');
@@ -179,7 +182,7 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col h-screen md:h-screen h-[100dvh] text-gray-100 font-sans selection:bg-blue-500/30 bg-gray-950 overflow-hidden relative">
       
-      {/* RECONNECTION OVERLAY - Keeps UI visible but blocks interaction */}
+      {/* RECONNECTION OVERLAY */}
       {connectionState === ConnectionState.RECONNECTING && (
           <div className="absolute inset-0 z-[100] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center">
               <div className="bg-gray-900 border border-gray-700 p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 max-w-xs text-center animate-in fade-in zoom-in duration-300">

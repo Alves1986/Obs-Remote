@@ -150,7 +150,7 @@ export const YouTubePanel: React.FC = () => {
               <div className="flex items-center gap-1.5" title="Tempo de Live (OBS)">
                   <Clock className={`w-3 h-3 ${obsStatus?.streaming ? 'text-red-500' : 'text-gray-600'}`} />
                   <span className={obsStatus?.streaming ? 'text-red-100 font-bold' : ''}>
-                      {obsStatus?.streamTimecode.split('.')[0] || '00:00:00'}
+                      {obsStatus?.streamTimecode?.split('.')[0] || '00:00:00'}
                   </span>
               </div>
               <div className="flex items-center gap-1.5 hidden md:flex" title="Resolução de Saída">
@@ -162,10 +162,10 @@ export const YouTubePanel: React.FC = () => {
           <div className="flex items-center gap-3">
                <div className="flex items-center gap-1.5" title="Taxa de Bits de Upload">
                   <Activity className={`w-3 h-3 ${obsStatus && obsStatus.bitrate > 0 ? 'text-green-500' : 'text-gray-600'}`} />
-                  <span>{obsStatus ? (obsStatus.bitrate / 1000).toFixed(0) : '0'} kbps</span>
+                  <span>{obsStatus ? ((obsStatus.bitrate || 0) / 1000).toFixed(0) : '0'} kbps</span>
               </div>
               <div className="bg-gray-800 px-1.5 rounded text-gray-300 font-bold" title="FPS Atual">
-                  {obsStatus?.fps.toFixed(0) || '0'} FPS
+                  {(obsStatus?.fps || 0).toFixed(0)} FPS
               </div>
           </div>
       </div>

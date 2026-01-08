@@ -84,9 +84,9 @@ export const StatusStrip: React.FC<Props> = ({ status, connectionState, currentS
                     <span className="group-hover:text-white transition-colors">Output</span>
                 </div>
                 <span className="bg-gray-900 px-2 py-0.5 rounded text-gray-300 border border-gray-800 flex gap-1">
-                    <span>{status.outputResolution}</span>
+                    <span>{status.outputResolution || '---'}</span>
                     <span className="text-gray-500">|</span>
-                    <span className="text-brand-400">{status.fps.toFixed(0)}fps</span>
+                    <span className="text-brand-400">{(status.fps || 0).toFixed(0)}fps</span>
                 </span>
              </div>
 
@@ -97,7 +97,7 @@ export const StatusStrip: React.FC<Props> = ({ status, connectionState, currentS
                     <span className="group-hover:text-white transition-colors">Bitrate</span>
                 </div>
                 <span className="bg-gray-900 px-2 py-0.5 rounded text-gray-300 border border-gray-800">
-                    {(status.bitrate / 1000).toFixed(1)} <span className="text-gray-600">Mbps</span>
+                    {((status.bitrate || 0) / 1000).toFixed(1)} <span className="text-gray-600">Mbps</span>
                 </span>
              </div>
 
@@ -108,7 +108,7 @@ export const StatusStrip: React.FC<Props> = ({ status, connectionState, currentS
                     <span className="group-hover:text-white transition-colors">Load</span>
                 </div>
                  <span className="bg-gray-900 px-2 py-0.5 rounded text-gray-300 border border-gray-800">
-                    {status.cpuUsage.toFixed(1)}<span className="text-gray-600">%</span>
+                    {(status.cpuUsage || 0).toFixed(1)}<span className="text-gray-600">%</span>
                 </span>
              </div>
          </div>
