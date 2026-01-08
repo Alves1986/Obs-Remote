@@ -9,6 +9,7 @@ import { Logger } from './components/Logger';
 import { TransitionPanel } from './components/TransitionPanel';
 import { QuickTitler } from './components/QuickTitler';
 import { YouTubePanel } from './components/YouTubePanel';
+import { ProgramMonitor } from './components/ProgramMonitor'; // New Component
 import { ConnectionState, ObsScene, AudioSource, StreamStatus, LogEntry, TransitionState } from './types';
 import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle, Loader2, WifiOff, Activity } from 'lucide-react';
 
@@ -234,6 +235,15 @@ const App: React.FC = () => {
 
           {/* CENTER: Visuals */}
           <div className="col-span-12 md:col-span-7 xl:col-span-5 flex flex-col h-full overflow-hidden gap-4">
+            
+            {/* Live Video Monitor */}
+            <div className="flex-none">
+                <ProgramMonitor 
+                    currentScene={currentScene} 
+                    isConnected={connectionState === ConnectionState.CONNECTED} 
+                />
+            </div>
+
             <TransitionPanel 
                 transition={transition} 
                 isConnected={connectionState === ConnectionState.CONNECTED} 
@@ -278,6 +288,12 @@ const App: React.FC = () => {
           <div className="flex-1 overflow-y-auto p-4 custom-scroll pb-24">
               {activeMobileTab === 'scenes' && (
                   <div className="flex flex-col gap-4 min-h-min">
+                      {/* Live Monitor on Mobile Scenes tab */}
+                      <ProgramMonitor 
+                        currentScene={currentScene} 
+                        isConnected={connectionState === ConnectionState.CONNECTED} 
+                      />
+                      
                       <TransitionPanel 
                           transition={transition} 
                           isConnected={connectionState === ConnectionState.CONNECTED} 

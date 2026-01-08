@@ -223,6 +223,26 @@ class ObsService {
     this.emit('connectionState', this.state);
   }
 
+  // --- Monitor (Screenshot) Logic ---
+
+  async getProgramScreenshot(sourceName: string): Promise<string | null> {
+      if (this.state !== ConnectionState.CONNECTED) return null;
+      try {
+          // Requests a compressed screenshot of the source (Scene)
+          // We use JPEG, Quality 50, and width 480px to keep it fast and light
+          const response = await this.obs.call('GetSourceScreenshot', {
+              sourceName: sourceName,
+              imageFormat: 'jpeg',
+              imageCompressionQuality: 50, 
+              imageWidth: 480 
+          });
+          return response.imageData;
+      } catch (e) {
+          // Silently fail on screenshot errors to not spam logs
+          return null;
+      }
+  }
+
   // --- Supabase Persistence ---
 
   async fetchPresets(): Promise<ConnectionPreset[]> {
