@@ -431,6 +431,19 @@ class ObsService {
   }
 
   // --- Controls ---
+  
+  // NEW: Toggle Studio Mode Manually
+  async setStudioMode(enabled: boolean) {
+      if (this.state !== ConnectionState.CONNECTED) return;
+      try {
+          await this.obs.call('SetStudioModeEnabled', { studioModeEnabled: enabled });
+          // Optimistic update
+          this.studioMode = enabled;
+          this.emit('studioMode', this.studioMode);
+      } catch (e: any) {
+          this.log(`Erro Studio Mode: ${e.message}`, 'error');
+      }
+  }
 
   async setCurrentScene(sceneName: string) {
     if (this.state !== ConnectionState.CONNECTED) return;

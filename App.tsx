@@ -33,7 +33,8 @@ const App: React.FC = () => {
   const [audioSources, setAudioSources] = useState<AudioSource[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [transition, setTransition] = useState<TransitionState>({ currentTransition: 'Fade', duration: 300, availableTransitions: [] });
-  
+  const [studioMode, setStudioMode] = useState(false);
+
   // Mobile Tab State
   const [activeMobileTab, setActiveMobileTab] = useState<'scenes' | 'audio' | 'gfx' | 'social' | 'system'>('scenes');
 
@@ -94,6 +95,7 @@ const App: React.FC = () => {
     const handleAudio = (s: AudioSource[]) => setAudioSources(s);
     const handleLog = (l: LogEntry) => setLogs(prev => [...prev.slice(-49), l]);
     const handleTransition = (t: TransitionState) => setTransition(t);
+    const handleStudioMode = (m: boolean) => setStudioMode(m);
 
     obsService.on('connectionState', handleConnection);
     obsService.on('status', handleStatus);
@@ -103,6 +105,7 @@ const App: React.FC = () => {
     obsService.on('audioSources', handleAudio);
     obsService.on('log', handleLog);
     obsService.on('transition', handleTransition);
+    obsService.on('studioMode', handleStudioMode);
 
     return () => {
       obsService.off('connectionState', handleConnection);
@@ -113,6 +116,7 @@ const App: React.FC = () => {
       obsService.off('audioSources', handleAudio);
       obsService.off('log', handleLog);
       obsService.off('transition', handleTransition);
+      obsService.off('studioMode', handleStudioMode);
     };
   }, []);
 
@@ -246,6 +250,7 @@ const App: React.FC = () => {
 
             <TransitionPanel 
                 transition={transition} 
+                studioMode={studioMode}
                 isConnected={connectionState === ConnectionState.CONNECTED} 
             />
             <SceneGrid 
@@ -296,6 +301,7 @@ const App: React.FC = () => {
                       
                       <TransitionPanel 
                           transition={transition} 
+                          studioMode={studioMode}
                           isConnected={connectionState === ConnectionState.CONNECTED} 
                       />
                       <div className="flex-1">
