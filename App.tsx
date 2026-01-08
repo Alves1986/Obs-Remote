@@ -10,7 +10,7 @@ import { TransitionPanel } from './components/TransitionPanel';
 import { QuickTitler } from './components/QuickTitler';
 import { YouTubePanel } from './components/YouTubePanel';
 import { ConnectionState, ObsScene, AudioSource, StreamStatus, LogEntry, TransitionState } from './types';
-import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle, Loader2, WifiOff } from 'lucide-react';
+import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle, Loader2, WifiOff, Activity } from 'lucide-react';
 
 const App: React.FC = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);
@@ -220,7 +220,7 @@ const App: React.FC = () => {
       <div className="hidden md:block flex-1 p-6 overflow-hidden">
         <div className="grid grid-cols-12 gap-6 h-full max-w-[1920px] mx-auto">
           
-          {/* LEFT COLUMN: System */}
+          {/* LEFT COLUMN: System (Only visible on Large Screens XL+) */}
           <div className="hidden xl:flex xl:col-span-3 flex-col gap-6 overflow-hidden">
             <ConnectionPanel connectionState={connectionState} />
             <div className="flex-1 flex flex-col gap-6 overflow-y-auto pr-1 custom-scroll">
@@ -248,9 +248,14 @@ const App: React.FC = () => {
 
           {/* RIGHT: Audio & Graphics */}
           <div className="col-span-12 md:col-span-5 xl:col-span-4 flex flex-col gap-6 h-full overflow-y-auto custom-scroll pr-1">
+             
+             {/* Fallback for Medium Screens: Items from Left Col are moved here */}
              <div className="block xl:hidden space-y-4">
                 <ConnectionPanel connectionState={connectionState} />
                 <MacroControls isConnected={connectionState === ConnectionState.CONNECTED} />
+                <div className="min-h-[300px]">
+                   <YouTubePanel />
+                </div>
              </div>
 
              <div className="h-[220px]">
@@ -322,7 +327,7 @@ const App: React.FC = () => {
               <MobileTabButton id="scenes" icon={LayoutGrid} label="Cenas" />
               <MobileTabButton id="gfx" icon={Type} label="Títulos" />
               <MobileTabButton id="audio" icon={Sliders} label="Audio" />
-              <MobileTabButton id="social" icon={MessageCircle} label="Social" />
+              <MobileTabButton id="social" icon={Activity} label="Live" />
               <MobileTabButton id="system" icon={Settings2} label="Menu" />
           </div>
       </div>
