@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { obsService } from '../services/obsService';
-import { Eye, EyeOff, Film, Zap } from 'lucide-react';
+import { Eye, EyeOff, Film, Zap, WifiOff } from 'lucide-react';
 
 interface Props {
   currentScene: string;
@@ -10,41 +10,57 @@ interface Props {
 export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) => {
   const [enabled, setEnabled] = useState(true); // Default ON
   const [imageSrc, setImageSrc] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const intervalRef = useRef<any>(null);
   const [refreshRate, setRefreshRate] = useState(1000); // 1 FPS by default
+  const [isError, setIsError] = useState(false);
+
+  // Use a ref to track the timeout so we can clear it on unmount
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!isConnected || !enabled || !currentScene) {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        setImageSrc(null);
-        return;
-    }
+    // Flag to prevent state updates if component unmounts
+    let isMounted = true;
 
     const fetchFrame = async () => {
-        // Don't fetch if already waiting for a frame (prevents stacking)
-        if (loading) return; 
-        
-        // We use currentScene to capture what is effectively "Program"
-        // Note: OBS Websocket 'GetSourceScreenshot' works on Scene names
+      // Clear any existing timeout to be safe
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+      // Validation
+      if (!isConnected || !enabled || !currentScene) {
+        if (isMounted) setImageSrc(null);
+        return;
+      }
+
+      try {
         const base64 = await obsService.getProgramScreenshot(currentScene);
-        if (base64) {
-            setImageSrc(base64);
+        
+        if (isMounted) {
+            if (base64) {
+                setImageSrc(base64);
+                setIsError(false);
+            } else {
+                setIsError(true);
+            }
         }
-        setLoading(false);
+      } catch (e) {
+        if (isMounted) setIsError(true);
+      } finally {
+        // Schedule next fetch ONLY after this one completes (prevents network stacking)
+        if (isMounted && isConnected && enabled) {
+            timeoutRef.current = setTimeout(fetchFrame, refreshRate);
+        }
+      }
     };
 
-    // Initial fetch
+    // Start the loop
     fetchFrame();
 
-    intervalRef.current = setInterval(fetchFrame, refreshRate);
-
     return () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
+      isMounted = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [isConnected, enabled, currentScene, refreshRate]);
 
-  // Toggle speed between Slow (1s) and Fast (200ms)
+  // Toggle speed between Slow (1s) and Fast (300ms)
   const toggleSpeed = () => {
       setRefreshRate(prev => prev === 1000 ? 300 : 1000);
   };
@@ -54,7 +70,7 @@ export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) =
         {/* Header Overlay */}
         <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-center p-2 bg-gradient-to-b from-black/80 to-transparent">
             <div className="flex items-center gap-2">
-                 <div className={`w-2 h-2 rounded-full ${enabled && isConnected ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                 <div className={`w-2 h-2 rounded-full ${enabled && isConnected && !isError ? 'bg-red-500 animate-pulse' : 'bg-gray-500'}`}></div>
                  <span className="text-[10px] font-bold text-white uppercase tracking-widest shadow-black drop-shadow-md">
                      Monitor {enabled ? (refreshRate < 500 ? 'HQ' : 'Eco') : 'OFF'}
                  </span>
@@ -81,23 +97,24 @@ export const ProgramMonitor: React.FC<Props> = ({ currentScene, isConnected }) =
 
         {/* Video Area */}
         <div className="flex-1 flex items-center justify-center bg-[#050505] relative overflow-hidden group">
-            {isConnected && enabled && imageSrc ? (
+            {isConnected && enabled && imageSrc && !isError ? (
                 <img 
                     src={imageSrc} 
                     alt="Live Monitor" 
                     className="w-full h-full object-contain" 
+                    style={{ contentVisibility: 'auto' }} // Performance optimization
                 />
             ) : (
                 <div className="flex flex-col items-center justify-center gap-2 text-gray-700">
-                    <Film className="w-10 h-10 opacity-20" />
+                    {isError ? <WifiOff className="w-10 h-10 opacity-20 text-red-500" /> : <Film className="w-10 h-10 opacity-20" />}
                     <span className="text-[10px] uppercase font-mono">
-                        {!isConnected ? 'Desconectado' : enabled ? 'Carregando...' : 'Monitor Pausado'}
+                        {!isConnected ? 'Desconectado' : isError ? 'Erro de Sinal' : enabled ? 'Carregando...' : 'Monitor Pausado'}
                     </span>
                 </div>
             )}
             
             {/* Scanline Effect */}
-            {enabled && isConnected && (
+            {enabled && isConnected && !isError && (
                 <div className="absolute inset-0 bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.1)_50%)] bg-[length:100%_4px] pointer-events-none opacity-50"></div>
             )}
         </div>
