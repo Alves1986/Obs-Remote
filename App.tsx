@@ -11,7 +11,7 @@ import { QuickTitler } from './components/QuickTitler';
 import { YouTubePanel } from './components/YouTubePanel';
 import { ProgramMonitor } from './components/ProgramMonitor'; // New Component
 import { ConnectionState, ObsScene, AudioSource, StreamStatus, LogEntry, TransitionState } from './types';
-import { LayoutGrid, Sliders, Settings2, Cast, Type, MessageCircle, Loader2, WifiOff, Activity } from 'lucide-react';
+import { LayoutGrid, Sliders, Settings2, Cast, Type, Loader2, WifiOff, Activity } from 'lucide-react';
 
 const App: React.FC = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.DISCONNECTED);

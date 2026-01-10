@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ConnectionState, ConnectionPreset } from '../types';
 import { obsService } from '../services/obsService';
 import { supabase } from '../services/supabaseClient';
-import { Plug, Loader2, Check, Server, Lock, Save, Trash2, Cloud, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Plug, Loader2, Check, Server, Lock, Save, Trash2, Cloud, ShieldCheck } from 'lucide-react';
 
 interface Props {
   connectionState: ConnectionState;

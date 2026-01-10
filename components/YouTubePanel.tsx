@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { youtubeService, ChatMessage } from '../services/youtubeService';
 import { obsService } from '../services/obsService'; // Import OBS Service
 import { StreamStatus } from '../types'; // Import Types
-import { Youtube, Users, ThumbsUp, MessageSquare, Settings, RefreshCw, Eye, Activity, Clock, Monitor } from 'lucide-react';
+import { Youtube, ThumbsUp, MessageSquare, Settings, RefreshCw, Eye, Activity, Clock, Monitor } from 'lucide-react';
 
 export const YouTubePanel: React.FC = () => {
   const [apiKey, setApiKey] = useState('');

@@ -1,7 +1,7 @@
 import React from 'react';
 import { obsService } from '../services/obsService';
 import { TransitionState } from '../types';
-import { Scissors, Activity, Layers, Play, Columns, Square } from 'lucide-react';
+import { Scissors, Activity, Layers, Play } from 'lucide-react';
 
 interface Props {
   transition: TransitionState;

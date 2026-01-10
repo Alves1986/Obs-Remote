@@ -6,10 +6,6 @@ type Listener = (data: any) => void;
 
 // Configuration for "Smart" features
 const CONFIG = {
-  EXCLUSIVE_AUDIO: {
-    A: 'Audio Mesa Blackmagic',
-    B: 'Audio Mesa Som'
-  },
   SCENES: {
     START: 'Abertura',
     END: 'Final',
@@ -40,6 +36,9 @@ class ObsService {
   // Video Config Cache
   private outputWidth: number = 1920;
   private outputHeight: number = 1080;
+  
+  // Bitrate Calculation
+  private lastBytes: number = 0;
 
   private status: StreamStatus = {
     streaming: false,
@@ -87,7 +86,6 @@ class ObsService {
     this.obs.on('CurrentProgramSceneChanged', (data) => {
       this.currentScene = data.sceneName;
       this.emit('currentScene', this.currentScene);
-      this.handleSmartAudioSwitching(data.sceneName);
     });
 
     this.obs.on('CurrentPreviewSceneChanged', (data) => {
@@ -366,6 +364,8 @@ class ObsService {
     try {
       const stream = await this.obs.call('GetStreamStatus');
       const record = await this.obs.call('GetRecordStatus');
+
+      this.lastBytes = stream.outputBytes;
       
       // Note: FPS is updated via GetStats in heartbeat, but we initialize here
       this.status = {
@@ -479,9 +479,6 @@ class ObsService {
         const startScene = this.scenes.find(s => s.name.includes(CONFIG.SCENES.START))?.name || this.scenes[0]?.name;
         if(startScene) await this.setCurrentScene(startScene); 
         
-        await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
-        await this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
-        
         if (!this.status.streaming) await this.obs.call('StartStream');
         if (!this.status.recording) await this.obs.call('StartRecord');
         
@@ -527,18 +524,6 @@ class ObsService {
     } catch (e) {}
   }
 
-  private handleSmartAudioSwitching(sceneName: string) {
-      const lower = sceneName.toLowerCase();
-      if (lower.includes('móvel') || lower.includes('movel')) {
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, false); 
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, true);  
-      } 
-      else if (lower.includes('principal') || lower.includes('mesa')) {
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.B, false); 
-          this.setAudioMute(CONFIG.EXCLUSIVE_AUDIO.A, true);  
-      }
-  }
-
   async setTransition(transitionName: string) {
       if (this.state !== ConnectionState.CONNECTED) return;
       try {
@@ -574,13 +559,6 @@ class ObsService {
     this.updateAudioSourceLocal(sourceName, { muted });
     try {
         await this.obs.call('SetInputMute', { inputName: sourceName, inputMuted: muted });
-        if (!muted) {
-            if (sourceName === CONFIG.EXCLUSIVE_AUDIO.B) {
-                await this.obs.call('SetInputMute', { inputName: CONFIG.EXCLUSIVE_AUDIO.A, inputMuted: true });
-            } else if (sourceName === CONFIG.EXCLUSIVE_AUDIO.A) {
-                 await this.obs.call('SetInputMute', { inputName: CONFIG.EXCLUSIVE_AUDIO.B, inputMuted: true });
-            }
-        }
     } catch (e) {}
   }
 
@@ -672,13 +650,19 @@ class ObsService {
           
           const stream = await this.obs.call('GetStreamStatus');
           
+          // Calculate bitrate manually since v5 types don't include outputBytesPerSec
+          const currentBytes = stream.outputBytes;
+          const diff = currentBytes - this.lastBytes;
+          const bitrate = (stream.outputActive && diff > 0) ? (diff * 8) : 0;
+          this.lastBytes = currentBytes;
+
           this.status = {
               ...this.status,
               cpuUsage: stats.cpuUsage,
               memoryUsage: stats.memoryUsage,
               streaming: stream.outputActive,
               streamTimecode: stream.outputTimecode,
-              bitrate: stream.outputBytesPerSec * 8,
+              bitrate: bitrate, 
               fps: stats.activeFps, // Update Active FPS
               outputResolution: `${this.outputWidth}x${this.outputHeight}`
           };

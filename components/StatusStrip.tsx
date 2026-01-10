@@ -1,6 +1,6 @@
 import React from 'react';
 import { StreamStatus, ConnectionState } from '../types';
-import { Activity, Radio, Cpu, WifiOff, Wifi, Cast, Monitor, Film } from 'lucide-react';
+import { Cpu, WifiOff, Wifi, Cast, Monitor, Film } from 'lucide-react';
 
 interface Props {
   status: StreamStatus;
